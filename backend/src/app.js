@@ -42,6 +42,8 @@ app.use('/api', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+const { notFoundHandler, errorHandler } = require('./middlewares/error.middleware');
+
 // Health Check Endpoint
 app.get('/api/v1/health', (req, res) => {
   res.status(200).json({
@@ -52,4 +54,11 @@ app.get('/api/v1/health', (req, res) => {
   });
 });
 
+// 404 handler
+app.use(notFoundHandler);
+
+// Centralized error handler
+app.use(errorHandler);
+
 module.exports = app;
+
