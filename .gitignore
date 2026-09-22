@@ -1,0 +1,34 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+!*.env.example
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Mobile & Expo
+.expo/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# macOS / OS metadata
+.DS_Store
+Thumbs.db
+
+# Logs & build
+logs/
+*.log
+dist/
+build/
+coverage/
+.turbo/
