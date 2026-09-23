@@ -4,6 +4,8 @@ import { ROUTES } from './routes';
 import HomeScreen from '../screens/HomeScreen';
 import CompetitionDetailsScreen from '../screens/CompetitionDetailsScreen';
 import SubmissionUploadScreen from '../screens/SubmissionUploadScreen';
+import LoginScreen from '../screens/LoginScreen';
+import SignupScreen from '../screens/SignupScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -27,6 +29,14 @@ export default function AppNavigator() {
       <Stack.Screen
         name={ROUTES.SUBMISSION_UPLOAD}
         component={SubmissionUploadScreen}
+      />
+      <Stack.Screen
+        name={ROUTES.LOGIN}
+        component={LoginScreen}
+      />
+      <Stack.Screen
+        name={ROUTES.SIGNUP}
+        component={SignupScreen}
       />
       <Stack.Screen name={ROUTES.HOME} component={HomeScreen} />
     </Stack.Navigator>
