@@ -12,20 +12,21 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
-import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { THEME } from '../../constants/theme';
 import { useLanguage } from '../../i18n/LanguageContext';
-import { openRazorpayCheckout } from '../../services/razorpayService';
+import { ROUTES } from '../../navigation/routes';
 import apiClient from '../../api/client';
 import { useThrottledCallback } from '../../utils/debounce';
 import useAuthStore from '../../store/authStore';
+import RazorpayCheckoutModal from './RazorpayCheckoutModal';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /**
  * RegistrationSheet Component
  * Bottom sheet modal for competition registration, referral discount application,
- * and Razorpay payment checkout.
+ * participant auth verification (Login/Signup options), and authentic Razorpay Checkout modal.
  */
 const RegistrationSheet = ({
   visible,
@@ -33,8 +34,10 @@ const RegistrationSheet = ({
   competition,
   initialReferralCode = '',
   onRegistrationSuccess,
+  navigation,
 }) => {
   const { t } = useLanguage();
+  const { isAuthenticated, user, logout, login } = useAuthStore();
 
   const [referralCode, setReferralCode] = useState(initialReferralCode);
   const [appliedReferral, setAppliedReferral] = useState(initialReferralCode);
@@ -43,6 +46,10 @@ const RegistrationSheet = ({
   const [isPaying, setIsPaying] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [raceConditionRefundInfo, setRaceConditionRefundInfo] = useState(null);
+
+  // Razorpay Checkout Modal state
+  const [isRazorpayModalVisible, setIsRazorpayModalVisible] = useState(false);
+  const [razorpayOptions, setRazorpayOptions] = useState(null);
 
   // Sync initial referral code from deep link
   useEffect(() => {
@@ -62,7 +69,6 @@ const RegistrationSheet = ({
     setIsApplyingCode(true);
     setErrorMessage(null);
 
-    // Validate referral code (minimum 3 characters)
     setTimeout(() => {
       setIsApplyingCode(false);
       const code = referralCode.trim().toUpperCase();
@@ -82,27 +88,63 @@ const RegistrationSheet = ({
     setErrorMessage(null);
   };
 
-  // Full Razorpay Checkout Journey (Throttled & Debounced)
+  // Navigate to Login screen with return params
+  const handleNavigateToLogin = () => {
+    onClose();
+    if (navigation) {
+      navigation.navigate(ROUTES.LOGIN, {
+        returnTo: ROUTES.COMPETITION_DETAILS,
+        returnParams: { openRegistration: true },
+      });
+    }
+  };
+
+  // Navigate to Signup screen with return params
+  const handleNavigateToSignup = () => {
+    onClose();
+    if (navigation) {
+      navigation.navigate(ROUTES.SIGNUP, {
+        returnTo: ROUTES.COMPETITION_DETAILS,
+        returnParams: { openRegistration: true },
+      });
+    }
+  };
+
+  // Quick 1-tap demo auto-fill for testing/reviewing
+  const handleQuickDemoLogin = async () => {
+    try {
+      setIsPaying(true);
+      await login('demo@feedants.com', 'password123');
+      setIsPaying(false);
+    } catch (e) {
+      setIsPaying(false);
+      setErrorMessage(e.message || 'Quick demo login failed.');
+    }
+  };
+
+  // Step 1: Initiate Payment Order with Backend
   const handleProceedToPay = useThrottledCallback(async () => {
-    if (isPaying) return; // Client-side debounce to prevent duplicate double-taps
-    setIsPaying(true);
+    if (isPaying) return;
     setErrorMessage(null);
     setRaceConditionRefundInfo(null);
 
-    try {
-      // Step 0: Ensure authenticated session exists
-      let currentToken = useAuthStore.getState().accessToken;
-      if (!currentToken) {
-        try {
-          await useAuthStore.getState().login('demo@feedants.com', 'password123');
-          currentToken = useAuthStore.getState().accessToken;
-        } catch (loginErr) {
-          console.warn('[RegistrationSheet] Auto-login with demo account failed:', loginErr);
-          throw new Error('Please log in to continue registration.');
-        }
-      }
+    // If user is not authenticated, prompt Login or Signup explicitly
+    if (!isAuthenticated) {
+      Alert.alert(
+        'Account Required',
+        'Please sign in or create an account to secure your registration spot.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign Up', onPress: handleNavigateToSignup },
+          { text: 'Log In', onPress: handleNavigateToLogin },
+        ]
+      );
+      return;
+    }
 
-      // Step 1: Create payment order on backend
+    setIsPaying(true);
+
+    try {
       const initiateRes = await apiClient.post(
         `/competitions/${competition._id}/register/initiate-payment`,
         { referralCode: appliedReferral || undefined }
@@ -114,263 +156,348 @@ const RegistrationSheet = ({
         throw new Error('Unable to generate payment order. Please try again.');
       }
 
-      // Step 2: Open Razorpay Checkout modal
-      let paymentResult;
-      try {
-        paymentResult = await openRazorpayCheckout({
-          orderId: orderData.id,
-          amount: orderData.amount || finalPayable * 100,
-          currency: 'INR',
-          name: 'Feedants Arena',
-          description: `Entry Fee: ${competition.title || 'Competition'}`,
-          prefill: {
-            name: 'Arena Participant',
-            email: 'participant@feedants.com',
-            contact: '9876543210',
-          },
-          theme: { color: THEME.colors.brandDarkTeal },
-        });
-      } catch (payCancelErr) {
-        // Handle payment failure or user cancellation gracefully
-        setIsPaying(false);
-        setErrorMessage(
-          payCancelErr?.description ||
-          payCancelErr?.message ||
-          'Payment was cancelled or could not be completed. You can try again.'
-        );
-        return;
-      }
+      setIsPaying(false);
 
-      // Step 3: Confirm payment with backend (verifies HMAC signature & atomic spot booking)
-      try {
-        const confirmRes = await apiClient.post(
-          `/competitions/${competition._id}/register/confirm`,
-          {
-            razorpay_order_id: paymentResult.razorpay_order_id,
-            razorpay_payment_id: paymentResult.razorpay_payment_id,
-            razorpay_signature: paymentResult.razorpay_signature,
-          }
-        );
-
-        setIsPaying(false);
-        onClose();
-        if (onRegistrationSuccess) {
-          onRegistrationSuccess(confirmRes?.data?.data || confirmRes?.data || confirmRes);
-        }
-      } catch (confirmErr) {
-        setIsPaying(false);
-
-        // RACE CONDITION UX HANDLING:
-        // If spots just filled up by someone else while user was paying, backend returns 409
-        // and initiates an automatic refund
-        if (confirmErr?.response?.status === 409 || confirmErr?.response?.data?.errorCode === 'SPOTS_FILLED') {
-          setRaceConditionRefundInfo({
-            refundId: 'rfnd_' + Date.now().toString(36),
-            amount: finalPayable,
-            message:
-              confirmErr?.response?.data?.message ||
-              'All spots were filled while your payment was processing. A full refund has been automatically initiated.',
-          });
-        } else {
-          setErrorMessage(
-            confirmErr?.response?.data?.message ||
-            confirmErr?.message ||
-            'Could not confirm registration. If amount was deducted, it will be refunded.'
-          );
-        }
-      }
+      // Open authentic Razorpay test checkout modal
+      setRazorpayOptions({
+        orderId: orderData.id,
+        amount: orderData.amount || finalPayable * 100,
+        currency: 'INR',
+        name: 'Feedants Arena',
+        description: `Entry Fee: ${competition?.title || 'Competition'}`,
+        prefill: {
+          name: user?.name || 'Feedants Participant',
+          email: user?.email || 'participant@feedants.com',
+          contact: user?.phone || '9876543210',
+        },
+      });
+      setIsRazorpayModalVisible(true);
     } catch (err) {
       setIsPaying(false);
-      const backendMsg = err?.response?.data?.message || err?.message || 'Registration failed.';
+      const backendMsg = err?.response?.data?.message || err?.message || 'Payment initiation failed.';
       setErrorMessage(backendMsg);
     }
   }, 1200);
 
+  // Step 2: Payment Succeeded in Razorpay Modal -> Confirm with Backend
+  const handleRazorpaySuccess = async (paymentResult) => {
+    setIsRazorpayModalVisible(false);
+    setIsPaying(true);
+
+    try {
+      const confirmRes = await apiClient.post(
+        `/competitions/${competition._id}/register/confirm`,
+        {
+          razorpay_order_id: paymentResult.razorpay_order_id,
+          razorpay_payment_id: paymentResult.razorpay_payment_id,
+          razorpay_signature: paymentResult.razorpay_signature,
+        }
+      );
+
+      setIsPaying(false);
+      onClose();
+      if (onRegistrationSuccess) {
+        onRegistrationSuccess(confirmRes?.data?.data || confirmRes?.data || confirmRes);
+      }
+    } catch (confirmErr) {
+      setIsPaying(false);
+
+      // RACE CONDITION UX HANDLING:
+      if (confirmErr?.response?.status === 409 || confirmErr?.response?.data?.errorCode === 'SPOTS_FILLED') {
+        setRaceConditionRefundInfo({
+          refundId: 'rfnd_' + Date.now().toString(36),
+          amount: finalPayable,
+          message:
+            confirmErr?.response?.data?.message ||
+            'All spots were filled while your payment was processing. A full refund has been automatically initiated.',
+        });
+      } else {
+        setErrorMessage(
+          confirmErr?.response?.data?.message ||
+          confirmErr?.message ||
+          'Could not confirm registration. If amount was deducted, it will be refunded.'
+        );
+      }
+    }
+  };
+
+  // Payment Failed or Cancelled in Razorpay Modal
+  const handleRazorpayFailure = (error) => {
+    setIsRazorpayModalVisible(false);
+    setIsPaying(false);
+    setErrorMessage(
+      error?.description || error?.message || 'Payment was cancelled or could not be completed.'
+    );
+  };
+
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
-    >
-      <View style={styles.overlay}>
-        <TouchableOpacity
-          style={styles.backdropTouch}
-          activeOpacity={1}
-          onPress={isPaying ? null : onClose}
-        />
+    <>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={onClose}
+      >
+        <View style={styles.overlay}>
+          <TouchableOpacity
+            style={styles.backdropTouch}
+            activeOpacity={1}
+            onPress={isPaying ? null : onClose}
+          />
 
-        <View style={styles.sheetContainer}>
-          {/* Top Handle Indicator */}
-          <View style={styles.handleContainer}>
-            <View style={styles.handleBar} />
-          </View>
-
-          {/* Sheet Header */}
-          <View style={styles.header}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle} numberOfLines={1}>
-                {competition?.title || 'Competition Registration'}
-              </Text>
-              <Text style={styles.headerSubtitle}>
-                {competition?.categoryTags?.[0] || 'Dance'} • Single Participant Entry
-              </Text>
+          <View style={styles.sheetContainer}>
+            {/* Top Handle Indicator */}
+            <View style={styles.handleContainer}>
+              <View style={styles.handleBar} />
             </View>
-            <TouchableOpacity
-              onPress={onClose}
-              disabled={isPaying}
-              style={styles.closeButton}
-            >
-              <Ionicons name="close" size={22} color="#64748B" />
-            </TouchableOpacity>
-          </View>
 
-          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-            {/* Race Condition Refund Notice */}
-            {raceConditionRefundInfo ? (
-              <View style={styles.raceConditionBox}>
-                <View style={styles.raceConditionHeader}>
-                  <Ionicons name="alert-circle" size={22} color="#B91C1C" />
-                  <Text style={styles.raceConditionTitle}>Spots Just Filled Up!</Text>
-                </View>
-                <Text style={styles.raceConditionText}>
-                  {raceConditionRefundInfo.message}
+            {/* Sheet Header */}
+            <View style={styles.header}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.headerTitle} numberOfLines={1}>
+                  {competition?.title || 'Competition Registration'}
                 </Text>
-                <View style={styles.refundDetailsBadge}>
-                  <Text style={styles.refundDetailsText}>
-                    💰 Refund Amount: ₹{raceConditionRefundInfo.amount} (100% Refund)
-                  </Text>
-                  <Text style={styles.refundDetailsSub}>
-                    Estimated credit in 2-4 business days to original payment method.
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.closeRefundBtn}
-                  onPress={onClose}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.closeRefundBtnText}>Understood</Text>
-                </TouchableOpacity>
+                <Text style={styles.headerSubtitle}>
+                  {competition?.categoryTags?.[0] || 'Dance'} • Single Participant Entry
+                </Text>
               </View>
-            ) : null}
+              <TouchableOpacity
+                onPress={onClose}
+                disabled={isPaying}
+                style={styles.closeButton}
+              >
+                <Ionicons name="close" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
 
-            {/* Error Banner with Retry */}
-            {errorMessage && !raceConditionRefundInfo ? (
-              <View style={styles.errorBox}>
-                <Ionicons name="warning-outline" size={18} color="#B91C1C" />
-                <Text style={styles.errorBoxText}>{errorMessage}</Text>
-              </View>
-            ) : null}
-
-            {/* Referral Code Box */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionLabel}>Referral / Promo Code</Text>
-              {appliedReferral ? (
-                <View style={styles.appliedReferralRow}>
-                  <View style={styles.appliedBadge}>
-                    <Ionicons name="pricetag" size={14} color="#005F60" />
-                    <Text style={styles.appliedCodeText}>{appliedReferral}</Text>
-                    <Text style={styles.appliedSavingsText}>(-₹10 OFF)</Text>
+            <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+              {/* Race Condition Refund Notice */}
+              {raceConditionRefundInfo ? (
+                <View style={styles.raceConditionBox}>
+                  <View style={styles.raceConditionHeader}>
+                    <Ionicons name="alert-circle" size={22} color="#B91C1C" />
+                    <Text style={styles.raceConditionTitle}>Spots Just Filled Up!</Text>
                   </View>
-                  <TouchableOpacity onPress={handleRemoveReferral} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Text style={styles.removeCodeText}>Remove</Text>
+                  <Text style={styles.raceConditionText}>
+                    {raceConditionRefundInfo.message}
+                  </Text>
+                  <View style={styles.refundDetailsBadge}>
+                    <Text style={styles.refundDetailsText}>
+                      💰 Refund Amount: ₹{raceConditionRefundInfo.amount} (100% Refund)
+                    </Text>
+                    <Text style={styles.refundDetailsSub}>
+                      Estimated credit in 2-4 business days to original payment method.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.closeRefundBtn}
+                    onPress={onClose}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.closeRefundBtnText}>Understood</Text>
                   </TouchableOpacity>
                 </View>
-              ) : (
-                <View style={styles.inputRow}>
-                  <TextInput
-                    style={styles.referralInput}
-                    placeholder="Enter referral code (e.g. DANCE10)"
-                    placeholderTextColor="#94A3B8"
-                    value={referralCode}
-                    onChangeText={setReferralCode}
-                    autoCapitalize="characters"
-                    editable={!isPaying}
-                  />
+              ) : null}
+
+              {/* Error Banner with Retry */}
+              {errorMessage && !raceConditionRefundInfo ? (
+                <View style={styles.errorBox}>
+                  <Ionicons name="warning-outline" size={18} color="#B91C1C" />
+                  <Text style={styles.errorBoxText}>{errorMessage}</Text>
+                </View>
+              ) : null}
+
+              {/* 1. Account / Authentication Status Card */}
+              {!isAuthenticated ? (
+                <View style={styles.authCard}>
+                  <View style={styles.authCardHeader}>
+                    <View style={styles.authIconCircle}>
+                      <Ionicons name="person" size={18} color="#005F60" />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.authCardTitle}>Account Required to Register</Text>
+                      <Text style={styles.authCardSub}>
+                        Sign in or create an account to secure your spot & receive certificates.
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.authBtnRow}>
+                    <TouchableOpacity
+                      style={styles.authLoginBtn}
+                      onPress={handleNavigateToLogin}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="log-in-outline" size={16} color="#FFFFFF" />
+                      <Text style={styles.authLoginBtnText}>Log In</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.authSignupBtn}
+                      onPress={handleNavigateToSignup}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="person-add-outline" size={16} color="#005F60" />
+                      <Text style={styles.authSignupBtnText}>Sign Up</Text>
+                    </TouchableOpacity>
+                  </View>
+
                   <TouchableOpacity
-                    style={[styles.applyButton, !referralCode.trim() && styles.applyButtonDisabled]}
-                    onPress={handleApplyReferral}
-                    disabled={!referralCode.trim() || isApplyingCode}
+                    style={styles.demoFillBtn}
+                    onPress={handleQuickDemoLogin}
                     activeOpacity={0.7}
                   >
-                    {isApplyingCode ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.applyButtonText}>Apply</Text>
-                    )}
+                    <Text style={styles.demoFillBtnText}>⚡ 1-Tap Quick Demo Account (Testing)</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.userCard}>
+                  <View style={styles.userAvatar}>
+                    <Text style={styles.userAvatarText}>
+                      {(user?.name || user?.email || 'U')[0].toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.userNameText}>{user?.name || 'Participant'}</Text>
+                    <Text style={styles.userEmailText}>{user?.email || user?.phone}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.logoutBtn}
+                    onPress={() => logout()}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.logoutBtnText}>Switch / Log Out</Text>
                   </TouchableOpacity>
                 </View>
               )}
-            </View>
 
-            {/* Price Breakdown */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionLabel}>Payment Summary</Text>
-
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryItemLabel}>Registration Fee</Text>
-                <Text style={styles.summaryItemValue}>₹ {baseFee}</Text>
+              {/* 2. Referral Code Section */}
+              <View style={styles.sectionCard}>
+                <Text style={styles.sectionLabel}>Referral / Promo Code</Text>
+                {appliedReferral ? (
+                  <View style={styles.appliedReferralRow}>
+                    <View style={styles.appliedBadge}>
+                      <Ionicons name="pricetag" size={14} color="#005F60" />
+                      <Text style={styles.appliedCodeText}>{appliedReferral}</Text>
+                      <Text style={styles.appliedSavingsText}>(-₹10 OFF)</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={handleRemoveReferral}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.removeCodeText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.inputRow}>
+                    <TextInput
+                      style={styles.referralInput}
+                      placeholder="Enter code (e.g. DANCE10)"
+                      placeholderTextColor="#94A3B8"
+                      value={referralCode}
+                      onChangeText={setReferralCode}
+                      autoCapitalize="characters"
+                      editable={!isPaying}
+                    />
+                    <TouchableOpacity
+                      style={[styles.applyButton, !referralCode.trim() && styles.applyButtonDisabled]}
+                      onPress={handleApplyReferral}
+                      disabled={!referralCode.trim() || isApplyingCode}
+                      activeOpacity={0.7}
+                    >
+                      {isApplyingCode ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.applyButtonText}>Apply</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
 
-              {discountAmount > 0 && (
+              {/* 3. Price Breakdown */}
+              <View style={styles.sectionCard}>
+                <Text style={styles.sectionLabel}>Payment Summary</Text>
+
                 <View style={styles.summaryRow}>
-                  <Text style={[styles.summaryItemLabel, { color: '#059669' }]}>
-                    Referral Discount
-                  </Text>
-                  <Text style={[styles.summaryItemValue, { color: '#059669', fontWeight: '700' }]}>
-                    - ₹ {discountAmount}
-                  </Text>
+                  <Text style={styles.summaryItemLabel}>Registration Fee</Text>
+                  <Text style={styles.summaryItemValue}>₹ {baseFee}</Text>
                 </View>
-              )}
 
-              <View style={styles.divider} />
+                {discountAmount > 0 && (
+                  <View style={styles.summaryRow}>
+                    <Text style={[styles.summaryItemLabel, { color: '#059669' }]}>
+                      Referral Discount
+                    </Text>
+                    <Text style={[styles.summaryItemValue, { color: '#059669', fontWeight: '700' }]}>
+                      - ₹ {discountAmount}
+                    </Text>
+                  </View>
+                )}
 
-              <View style={styles.summaryRow}>
-                <Text style={styles.totalLabel}>Total Payable</Text>
-                <Text style={styles.totalValue}>₹ {finalPayable}</Text>
+                <View style={styles.divider} />
+
+                <View style={styles.summaryRow}>
+                  <Text style={styles.totalLabel}>Total Payable</Text>
+                  <Text style={styles.totalValue}>₹ {finalPayable}</Text>
+                </View>
               </View>
-            </View>
 
-            {/* Trust & Gateway Badge */}
-            <View style={styles.trustBadge}>
-              <Ionicons name="shield-checkmark" size={18} color="#005F60" />
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text style={styles.trustTitle}>100% Secure Checkout</Text>
-                <Text style={styles.trustSubtitle}>
-                  Secured by Razorpay • UPI, Credit/Debit Cards, NetBanking
-                </Text>
-              </View>
-              <FontAwesome5 name="cc-visa" size={20} color="#64748B" style={{ marginHorizontal: 2 }} />
-              <FontAwesome5 name="cc-mastercard" size={20} color="#64748B" style={{ marginHorizontal: 2 }} />
-            </View>
-          </ScrollView>
-
-          {/* Bottom Action Footer */}
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={[styles.payButton, isPaying && styles.payButtonDisabled]}
-              onPress={handleProceedToPay}
-              disabled={isPaying}
-              activeOpacity={0.85}
-            >
-              {isPaying ? (
-                <View style={styles.payingIndicator}>
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                  <Text style={styles.payingText}>Processing Secure Checkout...</Text>
-                </View>
-              ) : (
-                <View style={styles.payButtonContent}>
-                  <Text style={styles.payButtonText}>
-                    Proceed to Pay ₹{finalPayable}
+              {/* 4. Trust & Security Badge */}
+              <View style={styles.trustBadge}>
+                <Ionicons name="shield-checkmark" size={18} color="#005F60" />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={styles.trustTitle}>100% Secure Checkout</Text>
+                  <Text style={styles.trustSubtitle}>
+                    Powered by Razorpay • UPI, Credit/Debit Cards, NetBanking
                   </Text>
-                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
                 </View>
-              )}
-            </TouchableOpacity>
+                <FontAwesome5 name="cc-visa" size={18} color="#64748B" style={{ marginHorizontal: 2 }} />
+                <FontAwesome5 name="cc-mastercard" size={18} color="#64748B" style={{ marginHorizontal: 2 }} />
+              </View>
+            </ScrollView>
+
+            {/* Bottom Action Footer */}
+            <View style={styles.footer}>
+              <TouchableOpacity
+                style={[styles.payButton, isPaying && styles.payButtonDisabled]}
+                onPress={handleProceedToPay}
+                disabled={isPaying}
+                activeOpacity={0.85}
+              >
+                {isPaying ? (
+                  <View style={styles.payingIndicator}>
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                    <Text style={styles.payingText}>Preparing Secure Checkout...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.payButtonContent}>
+                    <Text style={styles.payButtonText}>
+                      {isAuthenticated
+                        ? `Proceed to Pay ₹${finalPayable}`
+                        : `Log In / Sign Up to Pay ₹${finalPayable}`}
+                    </Text>
+                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+
+      {/* Razorpay Interactive Checkout Modal */}
+      <RazorpayCheckoutModal
+        visible={isRazorpayModalVisible}
+        options={razorpayOptions}
+        onSuccess={handleRazorpaySuccess}
+        onFailure={handleRazorpayFailure}
+        onClose={() => {
+          setIsRazorpayModalVisible(false);
+          setIsPaying(false);
+        }}
+      />
+    </>
   );
 };
 
@@ -387,7 +514,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    maxHeight: SCREEN_HEIGHT * 0.85,
+    maxHeight: SCREEN_HEIGHT * 0.88,
     paddingBottom: Platform.OS === 'ios' ? 24 : 16,
   },
   handleContainer: {
@@ -410,7 +537,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F1F5F9',
   },
   headerTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
     color: '#0F172A',
   },
@@ -426,7 +553,130 @@ const styles = StyleSheet.create({
   },
   body: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 14,
+  },
+  authCard: {
+    backgroundColor: '#F0FDFA',
+    borderWidth: 1,
+    borderColor: '#99F6E4',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+  },
+  authCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  authIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#CCFBF1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  authCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F766E',
+  },
+  authCardSub: {
+    fontSize: 11,
+    color: '#115E59',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  authBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  authLoginBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#005F60',
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  authLoginBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  authSignupBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#005F60',
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  authSignupBtnText: {
+    color: '#005F60',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  demoFillBtn: {
+    marginTop: 10,
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  demoFillBtnText: {
+    fontSize: 11,
+    color: '#0F766E',
+    fontWeight: '600',
+  },
+  userCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  userAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#005F60',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  userNameText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  userEmailText: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  logoutBtn: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  logoutBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
   },
   sectionCard: {
     backgroundColor: '#F8FAFC',
@@ -437,16 +687,15 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   sectionLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#334155',
-    marginBottom: 10,
+    color: '#475569',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 10,
   },
   inputRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
   },
   referralInput: {
@@ -456,18 +705,17 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontSize: 14,
-    fontWeight: '600',
+    paddingVertical: 8,
+    fontSize: 13,
     color: '#0F172A',
+    fontWeight: '600',
   },
   applyButton: {
     backgroundColor: THEME.colors.brandDarkTeal,
     paddingHorizontal: 16,
-    paddingVertical: 10,
     borderRadius: 8,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   applyButtonDisabled: {
     backgroundColor: '#94A3B8',
@@ -481,12 +729,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#E6F4F1',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: '#A7D9D3',
+    paddingVertical: 10,
   },
   appliedBadge: {
     flexDirection: 'row',
@@ -494,7 +742,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   appliedCodeText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#005F60',
   },
@@ -652,7 +900,7 @@ const styles = StyleSheet.create({
   },
   payButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   payingIndicator: {

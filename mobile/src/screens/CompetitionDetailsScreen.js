@@ -57,6 +57,14 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
 
   const [activeBottomNav, setActiveBottomNav] = useState('competitions');
 
+  // Auto-open registration sheet if returning from Login or Signup
+  useEffect(() => {
+    if (route.params?.openRegistration) {
+      setIsRegistrationSheetVisible(true);
+      navigation.setParams({ openRegistration: undefined });
+    }
+  }, [route.params?.openRegistration]);
+
   // Schedule deadline reminders (1 hr before registration ends, submission opening)
   useEffect(() => {
     if (competition) {
@@ -101,8 +109,11 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* 1. Screen Header with Back & Language Switcher */}
-      <ScreenHeader onBack={() => navigation.canGoBack() ? navigation.goBack() : null} />
+      {/* 1. Screen Header with Back, Auth, & Language Switcher */}
+      <ScreenHeader
+        onBack={() => navigation.canGoBack() ? navigation.goBack() : null}
+        navigation={navigation}
+      />
 
       {/* Loading Skeleton */}
       {isLoading ? (
@@ -209,6 +220,7 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
         onClose={() => setIsRegistrationSheetVisible(false)}
         competition={competition}
         initialReferralCode={referralCode}
+        navigation={navigation}
         onRegistrationSuccess={(_data) => {
           refetch();
           Alert.alert(
