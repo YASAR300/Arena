@@ -15,9 +15,11 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.feedants.arena",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/logo.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#005F60"
       }
     },
     "web": {
