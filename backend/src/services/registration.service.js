@@ -141,6 +141,15 @@ const confirmRegistration = async ({ competitionId, userId, razorpay_order_id, r
   const competition = await Competition.findById(competitionId);
   if (!competition) throw ApiError.notFound('Competition not found');
 
+  // Fast-path guard: if spots are already full, immediately reject with 409 without opening expensive transaction
+  if (competition.spotsBooked >= competition.totalSpots) {
+    const conflictErr = ApiError.conflict(
+      'All spots are filled for this competition'
+    );
+    conflictErr.errorCode = 'SPOTS_FILLED';
+    throw conflictErr;
+  }
+
   // ─── MONGODB TRANSACTION ────────────────────────────────────────────
   const session = await mongoose.startSession();
   let registration;
@@ -224,6 +233,17 @@ const confirmRegistration = async ({ competitionId, userId, razorpay_order_id, r
       conflictErr.errorCode = 'SPOTS_FILLED';
       throw conflictErr;
     }
+
+    // Check if error was caused by concurrency/WriteConflict while spots filled up
+    const latestComp = await Competition.findById(competitionId).select('spotsBooked totalSpots');
+    if (latestComp && latestComp.spotsBooked >= latestComp.totalSpots) {
+      const conflictErr = ApiError.conflict(
+        'All spots are filled for this competition'
+      );
+      conflictErr.errorCode = 'SPOTS_FILLED';
+      throw conflictErr;
+    }
+
     throw err;
   } finally {
     await session.endSession();
