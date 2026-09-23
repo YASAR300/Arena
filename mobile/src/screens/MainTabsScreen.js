@@ -9,18 +9,14 @@ import { ROUTES } from '../navigation/routes';
 
 /**
  * MainTabsScreen
- * Unified tab shell that renders all tab panes simultaneously in-memory.
+ * Unified tab shell — all panes stay mounted in memory.
+ * Uses opacity (0/1) + pointerEvents prop for instant, zero-flicker tab switching.
  *
- * Uses absoluteFill + opacity + pointerEvents for ZERO-ms, ZERO-flicker tab
- * switching on both Android and iOS.
- *
- * Why NOT display:'none'?
- *   On Android, toggling display:'none' removes the node from the layout tree
- *   entirely, causing a brief layout recalculation & flicker on each switch.
- *
- * Why opacity:0 + pointerEvents:'none'?
- *   The view stays in the layout tree (no remount / re-fetch), becomes invisible,
- *   and blocks touch events — a pure visual toggle with zero side-effects.
+ * Key decisions:
+ * - position:'absolute' fills the space above the tab bar for all panes
+ * - Active pane: opacity 1, zIndex 2
+ * - Hidden panes: opacity 0, zIndex 0 (NOT -1 — zIndex:-1 on Android hides behind parent bg)
+ * - pointerEvents:'none' on the hidden pane View blocks touches through the transparent layer
  */
 export default function MainTabsScreen({ navigation, route }) {
   const [activeTab, setActiveTab] = useState(
@@ -41,13 +37,15 @@ export default function MainTabsScreen({ navigation, route }) {
     }
   };
 
+  const isActive = (tab) => activeTab === tab;
+
   return (
     <View style={styles.container}>
 
-      {/* ── Competitions Tab Pane ── */}
+      {/* ── Competitions Tab ── */}
       <View
-        style={[styles.tabPane, activeTab !== 'competitions' && styles.paneHidden]}
-        pointerEvents={activeTab === 'competitions' ? 'box-none' : 'none'}
+        style={[styles.tabPane, isActive('competitions') ? styles.paneActive : styles.paneHidden]}
+        pointerEvents={isActive('competitions') ? 'box-none' : 'none'}
       >
         <CompetitionDetailsScreen
           navigation={navigation}
@@ -57,10 +55,10 @@ export default function MainTabsScreen({ navigation, route }) {
         />
       </View>
 
-      {/* ── Home Tab Pane ── */}
+      {/* ── Home Tab ── */}
       <View
-        style={[styles.tabPane, activeTab !== 'home' && styles.paneHidden]}
-        pointerEvents={activeTab === 'home' ? 'box-none' : 'none'}
+        style={[styles.tabPane, isActive('home') ? styles.paneActive : styles.paneHidden]}
+        pointerEvents={isActive('home') ? 'box-none' : 'none'}
       >
         <HomeScreen
           navigation={navigation}
@@ -69,10 +67,10 @@ export default function MainTabsScreen({ navigation, route }) {
         />
       </View>
 
-      {/* ── Explore Tab Pane ── */}
+      {/* ── Explore Tab ── */}
       <View
-        style={[styles.tabPane, activeTab !== 'explore' && styles.paneHidden]}
-        pointerEvents={activeTab === 'explore' ? 'box-none' : 'none'}
+        style={[styles.tabPane, isActive('explore') ? styles.paneActive : styles.paneHidden]}
+        pointerEvents={isActive('explore') ? 'box-none' : 'none'}
       >
         <ExploreScreen
           navigation={navigation}
@@ -81,10 +79,10 @@ export default function MainTabsScreen({ navigation, route }) {
         />
       </View>
 
-      {/* ── Profile Tab Pane ── */}
+      {/* ── Profile Tab ── */}
       <View
-        style={[styles.tabPane, activeTab !== 'profile' && styles.paneHidden]}
-        pointerEvents={activeTab === 'profile' ? 'box-none' : 'none'}
+        style={[styles.tabPane, isActive('profile') ? styles.paneActive : styles.paneHidden]}
+        pointerEvents={isActive('profile') ? 'box-none' : 'none'}
       >
         <ProfileScreen
           navigation={navigation}
@@ -93,7 +91,7 @@ export default function MainTabsScreen({ navigation, route }) {
         />
       </View>
 
-      {/* ── Bottom Tab Bar — always on top via absolute + zIndex ── */}
+      {/* ── Bottom Tab Bar — always on top ── */}
       <View style={styles.tabBarWrapper} pointerEvents="box-none">
         <BottomTabBar activeTab={activeTab} onTabPress={handleTabPress} />
       </View>
@@ -107,29 +105,38 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  // Every pane fills the full screen area ABOVE the tab bar
+  // All panes are absolutely positioned, filling from top to just above the tab bar
   tabPane: {
-    ...StyleSheet.absoluteFillObject,
-    bottom: 62, // tab bar height — keeps content from being hidden behind bar
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    // Leave space for the tab bar (BottomTabBar is ~62px tall)
+    bottom: 62,
   },
-  // Hidden pane: invisible, non-interactive, below active pane in z-order
+  // Active pane: fully visible, on top
+  paneActive: {
+    opacity: 1,
+    zIndex: 2,
+  },
+  // Hidden pane: invisible but still mounted — NO re-render, NO re-fetch
+  // zIndex:0 (not -1) is critical: zIndex:-1 on Android hides behind the parent background
   paneHidden: {
     opacity: 0,
-    zIndex: -1,
+    zIndex: 0,
   },
-  // Tab bar fixed at the very bottom, above all panes
+  // Tab bar fixed at bottom above all content panes
   tabBarWrapper: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 100,
+    zIndex: 10,
     backgroundColor: '#FFFFFF',
-    // Subtle top shadow to visually separate from content
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
     elevation: 8,
   },
 });
