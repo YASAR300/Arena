@@ -160,7 +160,12 @@ const confirmRegistration = async ({ competitionId, userId, razorpay_order_id, r
       );
 
       if (!updatedCompetition) {
-        throw ApiError.conflict('Sorry, all spots have just been filled. Registration failed.');
+        // RACE CONDITION EDGE CASE:
+        // Another concurrent user snatched the final spot while this user was completing
+        // their Razorpay payment. We must abort registration and trigger an automatic refund.
+        const raceErr = new Error('SPOTS_FILLED_RACE_CONDITION');
+        raceErr.isRaceCondition = true;
+        throw raceErr;
       }
 
       // Create Registration record (compound unique index = Layer 2)
@@ -190,6 +195,35 @@ const confirmRegistration = async ({ competitionId, userId, razorpay_order_id, r
         { session }
       );
     });
+  } catch (err) {
+    if (err.isRaceCondition || err.message === 'SPOTS_FILLED_RACE_CONDITION') {
+      // EDGE CASE HANDLING — DO NOT KEEP CHARGE:
+      // Trigger automatic refund stub via payment gateway to return funds to participant
+      console.warn(`[RegistrationService] Race condition detected: spots filled for competition ${competitionId} during payment confirmation. Initiating automatic refund.`);
+      
+      const refund = await paymentService.initiateRefund({
+        paymentId: razorpay_payment_id || payment._id,
+        amount: payment.amount * 100,
+        notes: {
+          reason: 'Race condition: Spots filled during payment checkout',
+          competitionId: String(competitionId),
+          userId: String(userId),
+        },
+      });
+
+      await Payment.findByIdAndUpdate(payment._id, {
+        status: 'REFUNDED',
+        failureReason: 'Spots sold out concurrently during checkout. Full refund initiated.',
+        refundId: refund.id,
+      });
+
+      const conflictErr = ApiError.conflict(
+        'All spots were filled while your payment was processing. A full 100% refund has been automatically initiated.'
+      );
+      conflictErr.errorCode = 'SPOTS_FILLED';
+      throw conflictErr;
+    }
+    throw err;
   } finally {
     await session.endSession();
   }
