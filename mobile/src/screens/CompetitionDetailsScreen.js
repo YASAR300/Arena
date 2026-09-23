@@ -68,6 +68,7 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
   const handleCtaAction = async (action) => {
     switch (action) {
       case 'REGISTER':
+      case 'LOGIN_REQUIRED':
         setIsRegistrationSheetVisible(true);
         break;
 

@@ -38,6 +38,7 @@ const BottomActionBar = ({
         };
 
       case 'REGISTER':
+      case 'LOGIN_REQUIRED':
         return {
           title: t('registerNow'),
           subtitle: `₹ ${entryFee} ${t('entryFee')}`,

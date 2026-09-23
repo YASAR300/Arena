@@ -18,6 +18,7 @@ import { useLanguage } from '../../i18n/LanguageContext';
 import { openRazorpayCheckout } from '../../services/razorpayService';
 import apiClient from '../../api/client';
 import { useThrottledCallback } from '../../utils/debounce';
+import useAuthStore from '../../store/authStore';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -91,6 +92,16 @@ const RegistrationSheet = ({
     setRaceConditionRefundInfo(null);
 
     try {
+      // Step 0: Ensure authenticated session exists
+      const authState = useAuthStore.getState();
+      if (!authState.isAuthenticated || !authState.accessToken) {
+        try {
+          await authState.login('demo@feedants.com', 'password123');
+        } catch (loginErr) {
+          console.warn('[RegistrationSheet] Auto-login with demo account failed:', loginErr);
+        }
+      }
+
       // Step 1: Create payment order on backend
       const initiateRes = await apiClient.post(
         `/competitions/${competition._id}/register/initiate-payment`,
