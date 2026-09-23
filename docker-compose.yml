@@ -1,0 +1,84 @@
+services:
+  # ── Backend API Service ─────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: feedants-arena-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongo:27017/feedants_arena?replicaSet=rs0&directConnection=true
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=feedants_prod_secret_key_rotation_token_2026_arena
+      - JWT_EXPIRES_IN=7d
+      - CORS_ORIGIN=http://localhost:3000,http://localhost:8081,http://localhost:19006
+      - RAZORPAY_KEY_ID=rzp_test_placeholder_key
+      - RAZORPAY_KEY_SECRET=rzp_test_placeholder_secret
+      - RAZORPAY_WEBHOOK_SECRET=test_webhook_secret_arena_feedants
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - arena-network
+
+  # ── MongoDB Replica Set Service (Supports ACID Transactions) ────────────────
+  mongo:
+    image: mongo:7.0
+    container_name: feedants-arena-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    entrypoint:
+      - bash
+      - -c
+      - |
+        /usr/bin/mongod --replSet rs0 --bind_ip_all &
+        MONGOD_PID=$$!
+        until mongosh --eval "db.adminCommand('ping')" --quiet; do
+          sleep 1
+        done
+        mongosh --eval "try { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }); } catch (e) { print(e); }"
+        wait $$MONGOD_PID
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - arena-network
+
+  # ── Redis In-Memory Cache Service ───────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: feedants-arena-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - arena-network
+
+networks:
+  arena-network:
+    driver: bridge
+
+volumes:
+  mongo-data:
+  redis-data:
