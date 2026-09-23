@@ -233,8 +233,10 @@ competitionSchema.methods.calculateDerivedStatus = function () {
 };
 
 // Compound & Single Indexes for Optimized Query Performance
+competitionSchema.index({ slug: 1, isActive: 1 });
 competitionSchema.index({ status: 1, registrationEndAt: 1 });
 competitionSchema.index({ isActive: 1, registrationStartAt: -1 });
+competitionSchema.index({ isActive: 1, spotsBooked: 1, totalSpots: 1 });
 
 const Competition = mongoose.model('Competition', competitionSchema);
 module.exports = Competition;

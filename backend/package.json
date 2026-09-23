@@ -16,8 +16,10 @@
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "express": "^4.21.2",
+    "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
+    "ioredis": "^6.0.0",
     "jest": "^30.5.2",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
@@ -27,7 +29,10 @@
     "socket.io": "^4.8.1",
     "supertest": "^7.3.0",
     "swagger-jsdoc": "^6.3.0",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "uuid": "^14.0.2",
+    "winston": "^3.19.0",
+    "xss": "^1.0.15"
   },
   "devDependencies": {
     "eslint": "^9.21.0",
