@@ -1,9 +1,10 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
+import { secureStorage } from '../store/authStore';
+import { navigateToLoginWithReturn } from '../navigation/navigationRef';
 
 /**
  * Default API host based on execution platform
- * Android Emulator uses 10.0.2.2, iOS Simulator / Web uses localhost
  */
 const getDefaultBaseURL = () => {
   if (Platform.OS === 'android') {
@@ -24,32 +25,35 @@ const apiClient = axios.create({
   },
 });
 
-// In-memory token storage stub (will integrate with SecureStore/AsyncStorage in auth flow)
-let authToken = null;
-let refreshToken = null;
+let inMemoryAccessToken = null;
 
-export const setAuthTokens = (access, refresh) => {
-  authToken = access;
-  refreshToken = refresh;
+export const setAuthTokens = (access) => {
+  inMemoryAccessToken = access;
 };
 
 export const clearAuthTokens = () => {
-  authToken = null;
-  refreshToken = null;
+  inMemoryAccessToken = null;
 };
 
-// Request Interceptor: Attach Bearer token
+// Request Interceptor: Attach Bearer token from memory or secure storage
 apiClient.interceptors.request.use(
-  (config) => {
-    if (authToken) {
-      config.headers.Authorization = `Bearer ${authToken}`;
+  async (config) => {
+    let token = inMemoryAccessToken;
+    if (!token) {
+      token = await secureStorage.getAccessToken();
+      if (token) {
+        inMemoryAccessToken = token;
+      }
+    }
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Response Interceptor: 401 Refresh Handling Stub
+// Response Interceptor: Silent Token Refresh (401) with Return-to-Screen Pattern
 let isRefreshing = false;
 let failedQueue = [];
 
@@ -86,24 +90,37 @@ apiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        if (!refreshToken) {
+        const storedRefreshToken = await secureStorage.getRefreshToken();
+        if (!storedRefreshToken) {
           throw new Error('No refresh token available');
         }
 
-        // Token refresh endpoint stub
+        // Silent refresh attempt with backend
         const refreshResponse = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
-          refreshToken,
+          refreshToken: storedRefreshToken,
         });
 
-        const newAccessToken = refreshResponse.data.data.accessToken;
-        setAuthTokens(newAccessToken, refreshToken);
+        const newAccessToken = refreshResponse.data?.data?.accessToken || refreshResponse.data?.data?.token;
+        if (!newAccessToken) {
+          throw new Error('Invalid refresh response from server');
+        }
+
+        inMemoryAccessToken = newAccessToken;
+        await secureStorage.saveTokens(newAccessToken, storedRefreshToken);
         processQueue(null, newAccessToken);
 
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return apiClient(originalRequest);
       } catch (refreshErr) {
+        console.warn('[ApiClient] Silent token refresh failed. Redirecting to login:', refreshErr.message);
         processQueue(refreshErr, null);
+        await secureStorage.clearAll();
         clearAuthTokens();
+
+        // RETURN-TO-SCREEN PATTERN:
+        // Automatically redirects to Login while preserving the user's current destination
+        navigateToLoginWithReturn();
+
         return Promise.reject(refreshErr);
       } finally {
         isRefreshing = false;
