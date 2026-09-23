@@ -10,7 +10,8 @@ const { Competition, Registration, Submission, PreviousWinner } = require('../mo
  * user's submission record, and spots availability.
  */
 const computeUserCompetitionState = async (competition, userId) => {
-  const now = new Date();
+  const now = new Date(); // used for lifecycle date comparisons via calculateDerivedStatus()
+  void now; // suppress unused-vars — lifecycle computation happens inside Competition model
   const lifecycleStatus = competition.calculateDerivedStatus();
   const isSoldOut = competition.spotsBooked >= competition.totalSpots;
 
@@ -56,7 +57,6 @@ const computeUserCompetitionState = async (competition, userId) => {
     ctaAction = 'VIEW_SUBMISSION';
   } else if (lifecycleStatus === 'SUBMISSION_OPEN' && isRegistered && !hasSubmitted) {
     ctaLabel = 'Upload Submission';
-    ctaAction: 'UPLOAD_SUBMISSION';
     ctaAction = 'UPLOAD_SUBMISSION';
   } else if (isRegistered) {
     ctaLabel = 'Registered';

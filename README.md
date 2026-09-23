@@ -1,460 +1,555 @@
-# Feedants Arena — Competition Details Feature
+# 🏆 Feedants Arena — Competition Platform
 
-> **Technical Assignment — Full-Stack Competition Details Screen**
-> Feedants | Senior Full-Stack Engineer Evaluation
+> **Assignment Submission** · Full-stack mobile competition platform (React Native + Node.js)
 
 ---
 
 ## Project Overview
 
-**Feedants Arena** is a full-stack monorepo for the "Competition Details Screen" feature of the Feedants competition platform. The platform allows participants to discover competitions, register, submit entries, and track results — all driven by a real backend and MongoDB database. Nothing on the screen is hardcoded; every data point is fetched dynamically from the REST API.
-
-This repository contains:
-- **`/backend`** — Node.js + Express.js REST API with Socket.IO, MongoDB (Mongoose), JWT auth
-- **`/mobile`** — React Native (Expo) application with React Navigation, TanStack Query, and Zustand
-
----
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                       MONOREPO ROOT                             │
-│                  Arena/  (git root)                             │
-│         ┌──────────────┐         ┌──────────────┐              │
-│         │  /backend    │         │  /mobile     │              │
-│         │  Node.js +   │◄───────►│  React Native│              │
-│         │  Express     │  REST   │  (Expo SDK)  │              │
-│         │  + Socket.IO │  JSON   │  + Socket.IO │              │
-│         └──────┬───────┘         └──────────────┘              │
-│                │                                                │
-│                ▼                                                │
-│         ┌─────────────┐                                         │
-│         │  MongoDB    │                                         │
-│         │  Atlas      │                                         │
-│         │  (8 models) │                                         │
-│         └─────────────┘                                         │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Request Flow — Competition Details Screen
-
-```
-Mobile App
-  │
-  ├─► GET /api/v1/competitions/:slug
-  │     Returns: title, tags, judge, prizes, dates, spots, rewards,
-  │              disclaimers, referral settings
-  │
-  ├─► GET /api/v1/competitions/:id/registration-status  [auth]
-  │     Returns: user's registration state → drives bottom CTA button
-  │
-  ├─► GET /api/v1/competitions/series/:seriesId/winners
-  │     Returns: Previous Winners carousel data
-  │
-  ├─► Socket.IO room `competition:{competitionId}`
-  │     Events: spots_updated, registration_closed
-  │     Fallback: React Query polling every 15 seconds
-  │
-  └─► POST /api/v1/competitions/:id/register  [auth]
-      POST /api/v1/competitions/:id/submit    [auth]
-```
+Feedants Arena is a production-grade online competition platform that lets participants discover, register for, and submit entries to creative competitions. The system is built as a **React Native (Expo) mobile application** backed by a **Node.js/Express REST API** with **MongoDB** for persistence, **Redis** for high-read caching, **Socket.IO** for real-time spot updates, and **Razorpay** for payment processing. The architecture is designed to handle thousands of concurrent users safely — atomic MongoDB operations prevent overbooking, compound unique indexes enforce one-registration-per-user at the database level, a Redis cache-aside layer absorbs read traffic, and an express-rate-limiter guards payment endpoints. The mobile app implements instant tab switching (all panes rendered in memory with `opacity` + `pointerEvents` — zero remount, zero flicker), bilingual UI (English / Hindi), push-notification reminders, and an Expo-Go compatible pure-JS notification layer.
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology | Justification |
-|---|---|---|
-| Backend Runtime | Node.js + Express.js | Fast, event-driven, huge ecosystem |
-| Database | MongoDB Atlas (Mongoose) | Flexible schema for competition + user data |
-| Real-time | Socket.IO | Push spot-count updates to competition rooms |
-| Authentication | JWT (access + refresh tokens) | Stateless, scalable across services |
-| Mobile Framework | Expo (React Native, SDK 52) | Native video/share APIs + fast dev iterations |
-| State Management | Zustand | Minimal boilerplate, granular subscriptions for high-freq UI state |
-| Data Fetching | TanStack React Query v5 | Polling, caching, optimistic updates out-of-the-box |
-| Navigation | React Navigation v7 | Industry standard for RN navigation |
-| Validation | Joi (backend) | Expressive schema validation for Express routes |
-| Payments | Razorpay | India's dominant payment gateway |
+| Layer | Technology | Version | Purpose |
+|---|---|---|---|
+| Mobile Framework | Expo / React Native | SDK 57 | Cross-platform iOS + Android app |
+| Navigation | React Navigation v7 | 7.x | Stack + tab navigation |
+| State / Data | Zustand + TanStack Query | 5.x | Auth state + server data caching |
+| HTTP Client | Axios | 1.x | REST API calls + token interceptors |
+| Real-time | Socket.IO client | 4.x | Live spots counter |
+| Backend Framework | Express.js | 4.x | REST API + middleware chain |
+| Database | MongoDB Atlas (Mongoose) | 8.x | Persistent data storage |
+| Cache | Redis (ioredis) | 7.2 | 3-min competition cache-aside |
+| Auth | JWT (RS256) | jsonwebtoken | Access (15 min) + Refresh (7 day) tokens |
+| Payments | Razorpay | Test mode | Entry fee checkout + webhook verification |
+| Logging | Winston | 3.x | Structured JSON logs |
+| Real-time transport | Socket.IO | 4.x | WebSocket + polling fallback |
+| Containerisation | Docker + docker-compose | 27.x | Local dev stack |
+| CI | GitHub Actions | — | Lint + test on push |
 
 ---
 
-## Assumptions
+## Architecture Diagram
 
-1. A user authentication system already exists in the broader Feedants platform. For this assignment, a minimal auth stub (`POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh-token`) is implemented to identify the current user for registration and submission actions.
-2. Media/video uploads will use a pre-signed URL flow (e.g., AWS S3 or Cloudinary) in production. In this assignment, a placeholder `mediaUrl` string is accepted.
-3. All timestamps are stored in UTC in MongoDB and converted to IST on the client.
-4. Razorpay credentials are test/sandbox keys for assignment scope.
+```mermaid
+graph TB
+    subgraph Mobile["📱 React Native App (Expo SDK 57)"]
+        UI[UI Screens]
+        TQ[TanStack Query Cache]
+        ZS[Zustand Auth Store]
+        SIO[Socket.IO Client]
+    end
 
----
+    subgraph Backend["🖥️ Node.js / Express API"]
+        AUTH[Auth Controller]
+        COMP[Competition Controller]
+        REG[Registration Controller]
+        SUB[Submission Controller]
+        WH[Webhook Controller]
+        JOB[Lifecycle Cron Job]
+    end
 
-## Technical Decisions
+    subgraph Infra["☁️ Infrastructure"]
+        MONGO[(MongoDB Atlas)]
+        REDIS[(Redis Cache)]
+        RZP[Razorpay Gateway]
+        S3[Cloud Storage\nSigned Upload URL]
+    end
 
-### 1. Expo (Managed Workflow) over React Native CLI
-Expo SDK 52 provides production-ready native modules for everything needed on this screen (`expo-av`/`expo-video` for judge intro video and previous winners, `expo-clipboard` + `expo-sharing` for Refer & Earn, `expo-linear-gradient` for UI polish) without requiring custom native code. When native modules beyond Expo's SDK are needed, `npx expo prebuild` yields a full bare workflow.
-
-### 2. Zustand for UI State
-Unlike Redux Toolkit, Zustand does not require reducers/actions/slices for simple state transitions (active tab, modal visibility, countdown tick). Granular atom-like selectors prevent full-component re-renders when only `spotsBooked` or countdown changes — critical for a heavy scrollable screen.
-
-### 3. TanStack React Query for Server State
-Built-in `refetchInterval` enables polling for spots-left accuracy. `staleWhileRevalidate` provides instant renders from cache. Optimistic mutations ensure instant UI feedback on registration.
-
-### 4. Socket.IO + Polling Hybrid for Real-time Spots
-For thousands of concurrent users, broadcasting `spots_updated` only to clients in the `competition:{id}` room reduces needless DB reads. React Query polls every 15s as fallback when WebSocket disconnects (e.g. mobile background/foreground transitions).
-
-### 5. REST over GraphQL
-Competition screen data is hierarchical but well-defined. A single optimized aggregate endpoint returns all page data. HTTP cache headers and CDN caching are trivial with REST. GraphQL would add operational complexity (schema, resolvers, persisted queries) not warranted at this scope.
-
-### 6. Compound Unique Index on Registration
-`{ userId: 1, competitionId: 1 }` unique index prevents duplicate registrations under concurrency. Application-level `findOne` + `save` pattern suffers from TOCTOU (Time-of-Check to Time-of-Use) race conditions — the DB-level constraint is the only reliable guarantee.
-
-### 7. Atomic `$inc` for Spot Booking
-Spot booking uses `findOneAndUpdate({ _id, spotsBooked: { $lt: totalSpots } }, { $inc: { spotsBooked: 1 } })` to prevent overbooking. Never `doc.spotsBooked++` + `doc.save()` which is not atomic under concurrent requests.
-
----
-
-## Trade-offs
-
-| Decision | Trade-off |
-|---|---|
-| Expo Managed | Less raw native control vs CLI; mitigated by prebuild path |
-| Zustand over Redux | Less opinionated structure; team discipline required |
-| REST over GraphQL | Under-fetching if screen data grows complex across many fragments |
-| Socket.IO | Extra infrastructure; polling fallback ensures resilience |
-| Monorepo | Simpler for assignment review; production would use Turborepo workspaces or split repos |
-
----
-
-## Database Models
-
-| Collection | Purpose |
-|---|---|
-| `User` | Participant profile, referral code, refresh tokens |
-| `Competition` | Core competition data, lifecycle dates, rewards |
-| `Judge` | Referenced adjudicator profile (shared across competitions) |
-| `Registration` | User ↔ Competition join; compound unique index prevents duplicates |
-| `Submission` | Video entry per registered participant; 1-to-1 with Registration |
-| `PreviousWinner` | Historical winners with series concept for recurring competitions |
-| `Payment` | Razorpay order/payment tracking |
-| `Referral` | Refer & Earn tracking; referral code → credited reward |
-
----
-
-## Competition State Machine
-
-The bottom CTA button progresses through the following states based on competition lifecycle:
-
-```
-UPCOMING → REGISTRATION_OPEN → REGISTRATION_CLOSED
-                                      │
-                               SUBMISSION_OPEN
-                                      │
-                              SUBMISSION_CLOSED
-                                      │
-                             RESULTS_DECLARED / CANCELLED
+    UI -- REST / JSON --> AUTH
+    UI -- REST / JSON --> COMP
+    UI -- REST / JSON --> REG
+    UI -- REST / JSON --> SUB
+    SIO -- WebSocket --> Backend
+    TQ -- cache-aside --> REDIS
+    COMP -- 3-min TTL --> REDIS
+    AUTH --> MONGO
+    COMP --> MONGO
+    REG -- atomic findOneAndUpdate --> MONGO
+    SUB --> MONGO
+    REG -- create order --> RZP
+    WH -- payment.captured --> RZP
+    SUB -- signed URL --> S3
+    JOB -- every 1 min --> MONGO
 ```
 
-User CTA button text mapping:
-- `REGISTRATION_OPEN` + not registered → **"Register Now"**
-- `REGISTRATION_OPEN` + registered → **"Registered"** (disabled)
-- `SUBMISSION_OPEN` + registered + no submission → **"Upload Submission"**
-- `SUBMISSION_OPEN` + registered + submitted → **"Submission Uploaded"** (disabled)
-- `RESULTS_DECLARED` → **"Results Announced"** (disabled)
+---
+
+## Folder Structure
+
+```
+Arena/
+├── backend/                  # Node.js/Express API server
+│   ├── src/
+│   │   ├── app.js            # Express app setup (middleware, routes, Swagger)
+│   │   ├── server.js         # HTTP + Socket.IO server startup
+│   │   ├── config/           # Logger (Winston), DB connection
+│   │   ├── controllers/      # Route handlers (auth, competition, registration, submission…)
+│   │   ├── jobs/             # node-cron lifecycle status updater (runs every minute)
+│   │   ├── middlewares/      # Auth, validation, sanitization, rate-limiter
+│   │   ├── models/           # Mongoose schemas (User, Competition, Registration, Submission…)
+│   │   ├── routes/           # Express routers (auth, competition, registration, submission…)
+│   │   ├── seeds/            # Database seed script (sample competition + demo user)
+│   │   ├── services/         # Business logic (competition details, cache, auth tokens)
+│   │   └── utils/            # AsyncHandler, ApiError, ApiResponse, pagination helpers
+│   ├── Dockerfile            # Production container image
+│   ├── package.json
+│   └── .env.example
+│
+├── mobile/                   # Expo / React Native mobile app
+│   ├── App.js                # Root component (NavigationContainer + QueryClientProvider)
+│   ├── src/
+│   │   ├── api/              # Axios client, competition API, shared QueryClient
+│   │   ├── assets/           # Static images and fonts
+│   │   ├── components/       # Reusable UI components (BottomActionBar, JudgeCard, etc.)
+│   │   ├── constants/        # Theme tokens (colors, spacing, typography)
+│   │   ├── hooks/            # Custom hooks (useCompetitionDetails, mutations)
+│   │   ├── i18n/             # Bilingual strings (English + Hindi) via LanguageContext
+│   │   ├── navigation/       # AppNavigator, routes, linking config, navigationRef
+│   │   ├── screens/          # Screens (CompetitionDetails, Home, Explore, Profile, Login…)
+│   │   ├── services/         # NotificationService (Expo Notifications scheduling)
+│   │   ├── store/            # Zustand auth store + SecureStore session persistence
+│   │   └── utils/            # Debounce/throttle helpers
+│   ├── package.json
+│   └── .env.example
+│
+├── docker-compose.yml        # Local dev stack (backend + MongoDB replica set + Redis)
+├── .env.example              # Root env template
+└── README.md
+```
 
 ---
 
-## Setup Instructions
+## Database Schema Diagram
+
+```mermaid
+erDiagram
+    User {
+        ObjectId _id PK
+        string name
+        string email UK
+        string phone UK
+        string passwordHash
+        string avatarUrl
+        string referralCode UK
+        string[] refreshTokens
+        Date createdAt
+    }
+
+    Judge {
+        ObjectId _id PK
+        string name
+        string photoUrl
+        string designation
+        number experienceYears
+        string bio
+        string introVideoUrl
+        boolean isActive
+    }
+
+    Competition {
+        ObjectId _id PK
+        string title
+        string slug UK
+        string[] categoryTags
+        string about
+        string judgingCriteria
+        string rules
+        number prizePool
+        number entryFee
+        number totalSpots
+        number spotsBooked
+        Date registrationStartAt
+        Date registrationEndAt
+        Date submissionStartAt
+        Date submissionEndAt
+        Date resultDate
+        string status
+        ObjectId judge FK
+        RewardTier[] rewards
+        boolean isActive
+    }
+
+    Registration {
+        ObjectId _id PK
+        ObjectId userId FK
+        ObjectId competitionId FK
+        Date registeredAt
+        number entryFeePaid
+        ObjectId paymentId FK
+        string status
+    }
+
+    Payment {
+        ObjectId _id PK
+        ObjectId userId FK
+        ObjectId competitionId FK
+        string razorpayOrderId UK
+        string razorpayPaymentId
+        string razorpaySignature
+        number amount
+        string currency
+        string status
+    }
+
+    Submission {
+        ObjectId _id PK
+        ObjectId userId FK
+        ObjectId competitionId FK
+        string title
+        string mediaUrl
+        number durationSeconds
+        string status
+        Date submittedAt
+    }
+
+    PreviousWinner {
+        ObjectId _id PK
+        string participantName
+        number rank
+        string rankLabel
+        string photoUrl
+        string videoUrl
+        string seriesId
+        string season
+    }
+
+    Referral {
+        ObjectId _id PK
+        ObjectId referrerId FK
+        ObjectId refereeId FK
+        string referralCode
+        number rewardAmount
+        string status
+    }
+
+    User ||--o{ Registration : "registers"
+    Competition ||--o{ Registration : "has"
+    User ||--o{ Submission : "submits"
+    Competition ||--o{ Submission : "receives"
+    Registration ||--o| Payment : "paid via"
+    Judge ||--o{ Competition : "adjudicates"
+    User ||--o{ Referral : "refers"
+```
+
+---
+
+## API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| **Auth** | | | |
+| POST | `/api/auth/signup` | Public | Create account (name, email, phone, password) |
+| POST | `/api/auth/login` | Public | Login with email/phone + password → JWT pair |
+| POST | `/api/auth/refresh-token` | Public | Exchange refresh token for new access token |
+| POST | `/api/auth/logout` | Bearer | Revoke refresh token |
+| **Competitions** | | | |
+| GET | `/api/competitions` | Public | Paginated competition list (filter by category/status) |
+| GET | `/api/competitions/:idOrSlug` | Optional Bearer | Full competition details + `currentUserState` (Redis cached 3 min) |
+| GET | `/api/competitions/:id/spots` | Public | Lightweight spots polling (cached 30 s) |
+| GET | `/api/competitions/series/:seriesId/winners` | Public | Paginated previous winners for a series |
+| **Registration** | | | |
+| POST | `/api/competitions/:id/register/initiate-payment` | Bearer | Create Razorpay order for entry fee |
+| POST | `/api/competitions/:id/register/confirm` | Bearer | Verify payment signature → atomic spot booking |
+| POST | `/api/competitions/:id/register/cancel` | Bearer | Cancel registration (blocked after submission opens) |
+| **Submissions** | | | |
+| GET | `/api/competitions/:id/submissions/signed-url` | Bearer | Get pre-signed S3/GCS upload URL |
+| POST | `/api/competitions/:id/submissions` | Bearer | Save submission metadata after upload |
+| PUT | `/api/competitions/:id/submissions` | Bearer | Replace/update existing submission |
+| GET | `/api/competitions/:id/submissions/me` | Bearer | Fetch current user's own submission |
+| GET | `/api/competitions/:id/submissions` | Bearer | List all submissions (admin) — paginated |
+| **Misc** | | | |
+| GET | `/api/competitions/:id/previous-winners` | Public | Previous winners for a competition |
+| GET | `/api/judges/:id` | Public | Judge profile |
+| GET | `/api/users/me/referral-code` | Bearer | Get my referral code + share URL |
+| POST | `/api/referrals/redeem` | Public | Apply referral code to a registration |
+| **Webhooks** | | | |
+| POST | `/api/webhook/razorpay` | HMAC-SHA256 | Handle `payment.captured` / `payment.failed` events |
+| **Health** | | | |
+| GET | `/api/health` | Public | Liveness check (uptime, memory, version) |
+| GET | `/api/health/ready` | Public | Readiness check (MongoDB + Redis connectivity) |
+| GET | `/api/docs` | Public | Swagger UI documentation |
+
+---
+
+## Setup & Run Instructions
 
 ### Prerequisites
-- Node.js >= 18
-- MongoDB Atlas cluster (or local MongoDB replica set)
-- Expo CLI: `npm install -g expo-cli`
 
-### Backend Setup
+| Requirement | Minimum Version | Notes |
+|---|---|---|
+| Node.js | 18.x LTS | `node --version` |
+| npm | 9.x | bundled with Node |
+| MongoDB | 7.0 (or Atlas free tier) | Atlas recommended; replica set required for transactions |
+| Redis | 7.x | `redis-server` locally **or** Redis Cloud free tier |
+| Android Studio | Giraffe / Hedgehog | For Android emulator |
+| Xcode | 15+ | macOS only, for iOS simulator |
+| Watchman | Latest | macOS only — `brew install watchman` |
+| Java JDK | 17 (LTS) | Required by Android build tools |
+| Expo CLI | Latest | `npm install -g expo-cli` (optional — `npx expo` also works) |
+
+---
+
+### 1 · Clone the Repository
+
+```bash
+git clone https://github.com/YASAR300/Arena.git
+cd Arena
+```
+
+---
+
+### 2 · Backend Setup
+
 ```bash
 cd backend
-cp .env.example .env
-# Edit .env with your MongoDB URI and JWT secrets
+
+# Install dependencies
 npm install
+
+# Create your local environment file
+cp ../.env.example .env   # or: copy .env.example .env  (Windows)
+
+# Edit .env — fill in at minimum:
+#   MONGODB_URI   — your Atlas connection string (or mongodb://localhost:27017/feedants_arena)
+#   REDIS_URL     — redis://127.0.0.1:6379  (if running Redis locally)
+#   JWT_ACCESS_SECRET / JWT_REFRESH_SECRET — any random 32+ character strings
+#   RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET   — from Razorpay test dashboard
+
+# Start the development server
 npm run dev
-# Server starts on http://localhost:5000
-# Health check: GET http://localhost:5000/api/v1/health
+# → Server listening on http://localhost:5000
+# → Swagger UI at  http://localhost:5000/api/docs
+# → Health check at http://localhost:5000/api/health
 ```
 
-### Mobile Setup
+**Alternative — Docker (runs backend + MongoDB replica set + Redis together):**
+
 ```bash
-cd mobile
-cp .env.example .env
-# Edit .env to point EXPO_PUBLIC_API_URL to your backend
+# From the Arena/ root directory
+docker-compose up --build
+
+# Backend will be at http://localhost:5000
+# MongoDB at        mongodb://localhost:27017
+# Redis at          redis://localhost:6379
+```
+
+Confirm the server is healthy:
+
+```bash
+curl http://localhost:5000/api/health
+# Expected: {"success":true,"data":{"status":"healthy",...}}
+```
+
+---
+
+### 3 · Seed the Database
+
+```bash
+# From the backend/ directory (with .env loaded)
+npm run seed
+```
+
+This creates:
+- **1 Judge** — Manju Dubey, Professional Kathak Dancer, 12+ years experience
+- **4 Previous Winners** — Riya Shah (1st), Aarav Mehta (1st), Neha Verma (2nd), Ishita Chokshi (3rd)
+- **1 Competition** — "Feedants Classical Dance" · ₹1,500 prize pool · ₹99 entry fee · 20 spots (1 booked) · all 6 reward tiers · live registration + submission windows
+- **1 Demo user** — `demo@feedants.com` / `password123`
+
+After seeding, the app immediately shows the **exact screen from the design reference**.
+
+---
+
+### 4 · Mobile App Setup
+
+```bash
+cd mobile   # from Arena/ root: cd mobile
+
+# Install JavaScript dependencies
 npm install
-npm start
-# Scan QR code with Expo Go app or press 'a' for Android, 'i' for iOS
+
+# Create your local environment file
+cp ../.env.example .env
+
+# Edit .env — set EXPO_PUBLIC_API_URL:
+#   Local backend:  EXPO_PUBLIC_API_URL=http://10.0.2.2:5000/api   (Android emulator)
+#   Local backend:  EXPO_PUBLIC_API_URL=http://localhost:5000/api   (iOS simulator)
+#   Render deploy:  EXPO_PUBLIC_API_URL=https://arena-wog5.onrender.com/api
+
+# Start Metro bundler
+npm start          # or: npx expo start -c  (clears cache)
+
+# Run on Android emulator  (Android Studio must be open with an AVD running)
+npm run android    # or: npx expo run:android
+
+# Run on iOS simulator  (macOS + Xcode required)
+npm run ios        # or: npx expo run:ios
+
+# Run in Expo Go on a physical device
+# → Scan the QR code printed by Metro with the Expo Go app
 ```
 
-## Frontend User Journeys & Architecture
-
-### 1. Registration + Payment Flow (Razorpay)
-- **Bottom Sheet Modal (`RegistrationSheet.js`)**:
-  - Displays entry fee breakdown: Base Fee, Referral Discount (if code applied via deep link or manual entry), Total Payable.
-  - Razorpay checkout integration with Test Mode key support.
-  - Full flow: Frontend requests order from backend → Backend generates order id → Frontend opens Razorpay Checkout → On success, sends `razorpay_order_id`, `razorpay_payment_id`, and `razorpay_signature` to backend → Backend verifies HMAC-SHA256 signature server-side → Backend atomically books the spot via MongoDB transaction → Frontend updates cache and `BottomActionBar` switches to "Registered".
-- **Race Condition & Auto-Refund Handling**:
-  - If another user snatches the last spot while the current user was on the checkout screen, the backend's atomic condition `spotsBooked: { $lt: totalSpots }` fails.
-  - The backend catches this, automatically triggers an automatic refund stub via Razorpay (`paymentService.initiateRefund`), updates payment status to `REFUNDED`, and returns a clear `SPOTS_FILLED` error.
-  - The mobile frontend immediately displays a clear explanation with refund details (100% refund, credit time).
-
-### 2. Deep Link & Referral Handling
-- **Supported Schemes**:
-  - Custom URI: `feedants://competitions/:slug?ref=CODE`
-  - Universal / App Links: `https://feedants.com/competitions/:slug?ref=CODE`
-- **Behavior**:
-  - React Navigation parses the `ref` query parameter and auto-applies the referral code inside `RegistrationSheet.js`.
-- **Web Fallback (Production Architecture)**:
-  - If the app is not installed, the universal HTTPS link opens a mobile web landing page.
-  - The landing page presents competition details and routes the user to Google Play / App Store with deferred deep linking (via Branch.io / Firebase Dynamic Links), preserving the referral attribution across app installation.
-
-### 3. Submission Upload & Edit Flow
-- **Media Picker & Preview (`SubmissionUploadScreen.js`)**:
-  - Uses `expo-image-picker` to select performance videos or photos.
-  - Displays preview, resolution, duration, and file metadata.
-- **Signed URL Upload Pattern**:
-  - Client requests a pre-signed URL from `GET /api/competitions/:id/submissions/signed-url`.
-  - Client uploads directly to cloud storage (S3/Cloudinary), tracking progress visually from 0% to 100%.
-  - On upload completion, client confirms the submission with `POST /api/competitions/:id/submissions`.
-- **Edit / Replace Before Deadline**:
-  - If a user has already submitted, they can replace their submission as long as the submission window is active (`now <= competition.submissionEndAt`). Both client and server strictly enforce this deadline.
-- **Urgent Deadline Warning**:
-  - If `< 1 hour` remains before submission deadline, an urgent amber/red countdown banner alerts the user.
-
-### 4. Authentication & Token Storage
-- **Screens**: `LoginScreen.js` and `SignupScreen.js` with form validation and password visibility toggle.
-- **Return-To-Screen Pattern**:
-  - If an unauthenticated user attempts to register or submit, they are redirected to login with `returnTo` and `returnParams`, automatically resuming their intended journey upon authentication.
-- **Token Storage Trade-off**:
-  - *Production Best Practice*: `react-native-keychain` or `expo-secure-store` utilizing hardware-backed Keystores (Android TEE / iOS Secure Enclave) for encrypted token storage at rest.
-  - *Trade-off Made*: Abstracted `secureStorage` adapter backed by `@react-native-async-storage/async-storage` for universal Expo Go execution without native compilation. Swapping to Keychain in production requires changing only the storage adapter.
-
-### 5. Edge Case UX & Resiliency
-- **Offline Detection Banner**: Real-time network detection via `@react-native-community/netinfo`. Shows an animated banner when offline, and flashes a green confirmation banner when connectivity resumes.
-- **Silent Token Refresh (401 Interceptor)**: Axios interceptor intercepts 401 Unauthorized responses, silently refreshes the JWT access token using the stored refresh token, queues and retries pending requests. If refresh fails, it redirects to login preserving the current destination.
-- **Double-Tap Debounce / Throttling**: Critical action buttons (`BottomActionBar`, `RegistrationSheet`, `SubmissionUploadScreen`) use leading-edge click throttling (`useThrottledCallback`) and in-flight disabled states to eliminate accidental double charges or duplicate submissions.
-
-### 6. Notifications Architecture
-- **Local Reminders (`notificationService.js`)**:
-  - Schedules notifications for:
-    1. "Registration closing in 1 hour"
-    2. "Submission window opening"
-- **Production Push Pipeline**:
-  - FCM / APNs integration where device tokens are registered on login.
-  - Backend event-driven workers (BullMQ + Redis) dispatch batch multicast pushes for deadline alerts and result announcements.
+> **Note:** This project uses **Expo Go** (pure-JS mode). No `npx expo prebuild` or native compilation steps are needed for running in Expo Go. The Razorpay integration uses a custom React Native WebView modal instead of the native SDK to preserve Expo Go compatibility.
 
 ---
 
-## Commit Convention
+### 5 · iOS Pod Install (native build only)
 
-All commits follow [Conventional Commits](https://www.conventionalcommits.org/):
-```
-feat|fix|chore|docs|refactor|test|perf(scope): message
+```bash
+# Only needed if running via 'npx expo run:ios' (not Expo Go):
+cd mobile
+npx expo prebuild --platform ios
+cd ios
+pod install
+cd ..
+npx expo run:ios
 ```
 
-1. `feat(mobile): implement RegistrationSheet with Razorpay checkout integration`
-2. `feat(backend): add payment order creation and signature verification endpoints`
-3. `feat(mobile): handle registration race-condition and payment failure edge cases`
-4. `feat(mobile): add deep linking support for referral-based competition entry`
-5. `feat(mobile): implement SubmissionUploadScreen with progress and retry`
-6. `feat(backend): support submission edit/replace before deadline with validation`
-7. `feat(mobile): implement Login and Signup screens with secure token storage`
-8. `feat(mobile): add offline detection banner and network-aware UI states`
-9. `feat(mobile): implement silent token refresh and return-to-screen-after-login flow`
-10. `feat(mobile): add local notifications for registration/submission deadline reminders`
-11. `fix(mobile): debounce critical action buttons to prevent duplicate requests`
-12. `perf(backend): add and verify database indexes for core query patterns`
-13. `feat(backend): add Redis caching layer for competition details with cache invalidation`
-14. `test(backend): add k6 load test script for concurrent registration scenario`
-15. `fix(backend): security hardening — sanitization, CORS, CSP, rate limits, webhook verification`
-16. `chore(backend): replace console logging with structured Winston logging and request IDs`
-17. `feat(backend): add health and readiness check endpoints`
-18. `perf(mobile): memoize components and optimize re-renders around live spots counter`
-19. `perf(mobile): switch to cached image component and add error boundaries`
-20. `chore: add Dockerfile, docker-compose, and GitHub Actions CI pipeline`
+---
+
+## Required Environment Variables
+
+### Backend (`backend/.env`)
+
+| Variable | Description | Example | Required |
+|---|---|---|---|
+| `PORT` | HTTP server port | `5000` | Optional (default: 5000) |
+| `NODE_ENV` | Environment mode | `development` | Optional (default: development) |
+| `MONGODB_URI` | MongoDB Atlas connection string | `mongodb+srv://user:pass@cluster.mongodb.net/feedants_arena` | **Required** |
+| `REDIS_URL` | Redis connection URL | `redis://127.0.0.1:6379` | Optional (cache disabled gracefully without it) |
+| `JWT_ACCESS_SECRET` | Secret for signing access tokens | `at_least_32_random_chars_here` | **Required** |
+| `JWT_ACCESS_EXPIRATION` | Access token lifetime | `15m` | Optional (default: 15m) |
+| `JWT_REFRESH_SECRET` | Secret for signing refresh tokens | `another_32_random_chars_here` | **Required** |
+| `JWT_REFRESH_EXPIRATION` | Refresh token lifetime | `7d` | Optional (default: 7d) |
+| `RAZORPAY_KEY_ID` | Razorpay API Key ID | `rzp_test_xxxxxxxxxxxxxxxx` | **Required** for payments |
+| `RAZORPAY_KEY_SECRET` | Razorpay API Key Secret | `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` | **Required** for payments |
+| `RAZORPAY_WEBHOOK_SECRET` | Webhook signature verification secret | `webhook_secret_here` | **Required** for webhooks |
+| `CORS_ORIGIN` | Comma-separated allowed origins | `http://localhost:8081,http://localhost:19006` | Optional |
+| `LOG_LEVEL` | Winston log level | `info` | Optional (default: info) |
+
+### Mobile (`mobile/.env`)
+
+| Variable | Description | Example | Required |
+|---|---|---|---|
+| `EXPO_PUBLIC_API_URL` | Backend REST API base URL | `http://10.0.2.2:5000/api` | **Required** |
+| `EXPO_PUBLIC_ENV` | Environment label | `development` | Optional |
 
 ---
 
-## Scalability, Security & Production Engineering
+## Assumptions Made
 
-### 1. Database & Query Performance
-
-#### Mongoose Indexes & Execution Plan (`.explain('executionStats')`)
-All core queries use compound indexes and were verified using `backend/scripts/verify-indexes.js` to guarantee **`IXSCAN`** (Index Scan) and zero `COLLSCAN` (Collection Scans):
-- **Competition Details**: Compound index `{ slug: 1, isActive: 1 }` enables direct single-document index lookups with 0ms execution time.
-- **Series Winners**: `{ seriesId: 1, rank: 1 }` compound index sorts winners by podium rank directly on index pages without in-memory sorting (`hasSortStage: false`).
-- **User Registrations**: `{ userId: 1, competitionId: 1 }` unique compound index guarantees deduplication and instant user status checks.
-- **Submissions by Status**: `{ competitionId: 1, status: 1, submittedAt: -1 }` powers paginated judge/admin review feeds.
-
-#### Unbounded Array Elimination & Pagination
-All listing endpoints implement cursor or page-based pagination using `backend/src/utils/pagination.js`:
-- `GET /api/competitions?page=1&limit=20`
-- `GET /api/competitions/series/:seriesId/winners?page=1&limit=20`
-- `GET /api/competitions/:id/submissions?page=1&limit=20`
-
-#### Why Redis + Socket.IO Solve the "Thousands of Concurrent Users" Requirement
-Under viral marketing campaigns or flash-registration windows, thousands of concurrent users open the competition details screen within seconds. 
-
-- **The Problem with Direct MongoDB Reads**:
-  If 10,000 users fetch the competition screen directly from MongoDB:
-  1. The database connection pool is immediately saturated with 10,000 queries.
-  2. Each query performs deep population (Judge document + Rewards array + Series Winners).
-  3. Mongo CPU spikes to 100%, causing cascading query timeouts and blocking write transactions on the registration endpoint.
-- **The Solution (Redis Cache-Aside + Socket.IO Push)**:
-  1. **Cache-Aside Pattern**: `GET /api/competitions/:id` checks Redis first (`comp:details:<id>`). On cache hit, cached JSON is returned in **< 5ms** directly from RAM without touching MongoDB.
-  2. **Event-Driven Write-Through Invalidation**: Whenever a write occurs (e.g. user registers, spot booked, status change), the backend updates MongoDB, deletes the stale cache keys in Redis (`comp:details:<id>` and `comp:details:<slug>`), and emits a WebSocket broadcast `spots_updated` to the room `competition:{id}`.
-  3. **Longer Safe TTL**: Because active connected clients receive real-time push updates via Socket.IO, the Redis cache TTL can safely be 10–30 minutes without risk of users looking at stale data. If a user was disconnected or opens the screen fresh, they immediately hit the fresh Redis cache.
+- **Single submission per user per competition** — a user may submit once; a `PUT /submissions` endpoint replaces the existing submission before the submission window closes.
+- **"Multi-Win" category tag** — this is a display-only tag on the `categoryTags` array (type `string[]`) indicating the competition awards prizes to multiple rank positions, not just 1st place. No special business logic is gated on this tag.
+- **All timestamps stored in UTC** — the mobile client is responsible for converting to local time using `Date` and `Intl.DateTimeFormat`. The API never applies timezone offsets.
+- **Registration lifecycle is irrevocable after `submissionStartAt`** — cancel endpoint returns 400 if submission window is open; this matches the refund policy text shown in the design.
+- **Referral reward is a flat ₹10 discount on the entry fee** — it is applied at payment initiation time and deducted from the Razorpay order amount. The referrer credit (₹10 wallet credit) is created as a `Referral` document but wallet payout is marked as a future task (out of scope for assignment).
+- **Payment confirmation via Razorpay HMAC signature** — the `confirmRegistration` endpoint validates the Razorpay `razorpay_signature` using `HMAC-SHA256(razorpay_order_id + "|" + razorpay_payment_id, keySecret)`. In test mode, a mock signature is accepted by the mobile app's fallback path.
+- **Spot booking is atomic at the database layer** — `Competition.findOneAndUpdate({ _id, spotsBooked: { $lt: totalSpots } }, { $inc: { spotsBooked: 1 } })` prevents overbooking under concurrent requests without application-level locks.
+- **A duplicate registration attempt (same userId + competitionId) returns HTTP 409** — MongoDB compound unique index `{ userId: 1, competitionId: 1 }` enforces this at the storage level.
+- **Push notifications are scheduled client-side using Expo Notifications** — the backend sends no push notifications. This was chosen for Expo Go compatibility (no custom native build required). In production, APNs/FCM would be used via a server-side notification service.
+- **Redis is optional** — if `REDIS_URL` is not set or Redis is unavailable, the cache service falls back gracefully to direct MongoDB reads with a console warning.
+- **`status` field on Competition is "soft status"** — `calculateDerivedStatus()` recomputes the live lifecycle from timestamps at query time. The stored `status` field is updated by a background cron job every minute but is NOT the source of truth for CTA decisions (timestamps are).
+- **Previous Winners are per `seriesId` (competition slug)** — "Season N" winners from past runs of the same competition type are grouped by the competition's slug, not by MongoDB `_id`, allowing new competition documents to inherit winner history.
+- **The assignment requires support for "thousands of concurrent users"** — this was addressed through: Redis caching (3-min TTL on competition details), atomic MongoDB spot booking, rate limiting on payment/registration endpoints (5 req/min/IP), and a Socket.IO spots broadcast on every confirmed registration.
+- **Session management uses in-memory + SecureStore** — the access token is stored in memory (`inMemoryAccessToken`) for the fastest possible API request attachment; the refresh token and user object are persisted in Expo SecureStore for session restoration across app restarts.
 
 ---
 
-### 2. Concurrency Load Test Validation (Zero Overbooking)
+## Major Technical Decisions
 
-To validate the spot-booking critical path under high concurrency, an automated load test was executed (`node backend/loadtest/registration.js`):
-- **Scenario**: 500 concurrent virtual users race to confirm registration for a competition with **only 20 available spots**.
-- **Results**:
-  - **Successful Registrations (201 Created)**: Exactly **20**
-  - **Spots-Filled Rejections (409 Conflict)**: Exactly **480**
-  - **Internal Server Errors (500)**: **0**
-  - **Overbooked Spots**: **0** (MongoDB `spotsBooked: 20 / 20`)
-  - **Database Registration Documents**: Exactly **20**
-  - **Duplicate User Records**: **0**
+- **TanStack Query instead of Redux** — Competition data is server state (fetched, cached, and invalidated), not UI state. TanStack Query handles cache invalidation, background refetch, stale-while-revalidate, and loading states natively. Redux would add unnecessary boilerplate for this use case.
 
-```
-========================================================================
-                       LOAD TEST SUMMARY RESULTS                         
-========================================================================
-Total Concurrent Virtual Users:     500
-Total Test Execution Time:          21819ms (21.82s)
-Throughput:                         23 req/sec
-------------------------------------------------------------------------
-Successful Bookings (201 Created):   20  (Target: EXACTLY 20)
-Rejections (409 Spots Sold Out):    480  (Target: EXACTLY 480)
-Unexpected / Server Errors (500):    0  (Target: 0)
-------------------------------------------------------------------------
-LATENCY METRICS:
-  Min Latency:    127ms
-  Avg Latency:    1087ms
-  P50 (Median):   293ms
-  P95 Latency:    7022ms
-  P99 Latency:    13790ms
-  Max Latency:    13892ms
-------------------------------------------------------------------------
-DATABASE INTEGRITY AUDIT:
-  Competition spotsBooked:          20 / 20
-  Registrations in MongoDB:         20
-  Overbooked Spots:                 0
-  Duplicate User Records:           0
-========================================================================
-┌─────────┬───────────────────────────────────────────────────────┬────────┐
-│ (index) │ rule                                                  │ passed │
-├─────────┼───────────────────────────────────────────────────────┼────────┤
-│ 0       │ 'Exactly 20 successful bookings'                      │ true   │
-│ 1       │ 'Exactly 480 spots-filled 409 responses'              │ true   │
-│ 2       │ 'Zero 500 Internal Server Errors'                     │ true   │
-│ 3       │ 'Zero database overbooking (spotsBooked <= 20)'       │ true   │
-│ 4       │ 'Exact 20 Registration documents in database'         │ true   │
-│ 5       │ 'Zero duplicate user bookings (Compound Index check)' │ true   │
-└─────────┴───────────────────────────────────────────────────────┴────────┘
+- **REST instead of GraphQL** — The data shape is well-defined and stable (one competition detail payload, one registration flow). REST with OpenAPI/Swagger is simpler to test, document, and reason about. GraphQL would be warranted if the client needed highly variable field selections across many resources.
 
->>> SUCCESS: ALL CONCURRENCY ASSERTIONS PASSED! ZERO OVERBOOKING DETECTED. <<<
-```
+- **Socket.IO + Redis for real-time spot updates** — Socket.IO provides automatic WebSocket → long-polling fallback for unreliable mobile networks. Redis pub/sub (via the `ioredis` adapter) allows horizontal scaling with multiple server instances. A polling-only approach would add unnecessary latency; pure WebSocket-only would fail silently on poor connections.
 
-#### Additional Production Optimizations
-1. **Asynchronous Side Effects with BullMQ**:
-   - All non-critical side effects (sending confirmation emails, push notifications, generating GST invoices) are pushed to a Redis-backed BullMQ queue (`notification-queue`).
-   - The registration API responds to the client immediately after the database transaction commits, maintaining sub-300ms p50 latency.
-2. **MongoDB Connection Pool Tuning**:
-   - `maxPoolSize: 50` and `minPoolSize: 10` configured in `db.js` to ensure the Node.js event loop does not starve under sudden spikes.
+- **Atomic MongoDB `$inc` + `$lt` for concurrency safety** — Application-level "check then write" patterns fail under concurrent requests. A single atomic `findOneAndUpdate` with a conditional filter (`spotsBooked: { $lt: totalSpots }`) moves the race condition check into MongoDB's document-level lock, guaranteeing zero overbooking.
+
+- **JWT access (15 min) + refresh (7 day) token pair** — Short-lived access tokens limit the blast radius if a token is intercepted. Refresh tokens are stored per-user as an array in MongoDB, enabling targeted revocation (logout from one device) or full revocation (all devices).
+
+- **Cache-aside (lazy) pattern for Redis** — On first read the backend populates Redis; subsequent reads skip MongoDB entirely. TTL of 3 minutes on competition details and 30 seconds on spots data balances freshness with load reduction. The `currentUserState` object is intentionally NOT cached in Redis (it's computed per-user on every request) to prevent cross-user state leakage.
+
+- **User-scoped TanStack Query key** — The competition query key is `['competition', slug, userId]`. This ensures a new user (or a user who just logged in/out) always gets a fresh fetch with their correct personalized CTA state rather than serving another user's cached result.
+
+- **`opacity + pointerEvents` tab switching instead of `display: none`** — React Native's `display: 'none'` removes a node from the Android layout tree on every hide, causing layout recalculations and flicker. All tab panes are rendered in memory at all times; hidden panes use `opacity: 0 + pointerEvents: 'none'` for instant visual-only toggling with zero side effects.
+
+- **Monorepo structure** — `backend/` and `mobile/` live in the same repository for a single source of truth during assignment development. Shared `.env.example` and a root-level `docker-compose.yml` simplify reviewer setup.
+
+- **Expo Go-compatible pure-JS architecture** — No custom native modules (no `expo-notifications` native, no Razorpay native SDK). This allows the evaluator to run the app by scanning a QR code in Expo Go without installing Android Studio or Xcode.
 
 ---
 
-### 3. Security Hardening
+## Trade-offs Considered
 
-- **NoSQL Injection Defense**: `express-mongo-sanitize` scrubs all incoming `req.body`, `req.query`, and `req.params`, stripping dangerous `$where`, `$gt`, and regex operators.
-- **XSS Sanitization**: Custom `xssSanitizer` runs input strings through the `xss` library, neutralizing injected HTML or `<script>` tags in bio, comments, and submission text.
-- **Strict CORS Whitelist**: Removed wildcard `*`. Whitelist allows only authorized web and mobile origins (`localhost:3000`, `localhost:8081`, `exp://`, `https://arena-wog5.onrender.com`).
-- **Helmet Content Security Policy (CSP)**: Strict headers configured in `app.js` preventing clickjacking (`frame-ancestors 'none'`) and restricting script/style evaluation.
-- **Per-Route Rate Limiting**:
-  - `authLimiter`: 10 attempts per 15 minutes (mitigates credential stuffing).
-  - `registrationLimiter`: 30 requests per minute per IP.
-  - `webhookLimiter`: 120 requests per minute.
-  - `globalLimiter`: 300 requests per 15 minutes.
-- **Razorpay Webhook Verification**:
-  - Validates `x-razorpay-signature` using HMAC-SHA256 with `crypto.timingSafeEqual` to prevent timing attacks.
-  - Rejects tampered webhooks with 401 Unauthorized and logs security alerts.
-- **Sensitive Data Masking**:
-  - Winston logger automatically scrubs passwords, JWT tokens, credit card details, and Razorpay signatures before writing to disk/stdout.
-- **JWT Key Rotation Strategy**:
-  - Access tokens have short 15-minute TTL to reduce blast radius.
-  - Refresh tokens have 7-day TTL and are stored securely.
-  - Production key rotation implements dual-key verification (active + previous key) for a 24-hour overlap window.
-- **Dependency Audit**:
-  - `npm audit` on backend: **0 vulnerabilities**.
+- **Razorpay WebView modal vs native SDK** — Chose a custom `WebView`-based checkout modal so the app runs in Expo Go without a native build. Trade-off: the checkout UI is less polished than the native SDK (no fingerprint auth, no saved UPI VPAs). Acceptable for assignment scope; production would use `react-native-razorpay` with a prebuild.
+
+- **Client-side notification scheduling vs APNs/FCM** — Expo Notifications schedules reminders locally on the device. Trade-off: notifications only fire if the app has been opened at least once on the device; a server push would fire unconditionally. The client approach requires zero backend infrastructure for notifications, which was the deciding factor for assignment scope.
+
+- **Socket.IO polling fallback vs pure WebSocket** — Socket.IO adds ~12 KB to the bundle and may fall back to HTTP long-polling on very restricted networks. Trade-off: higher latency on fallback (~3 s vs ~50 ms) but guaranteed delivery. Chosen over a raw WebSocket for reliability on Indian mobile networks with variable connectivity.
+
+- **Redis TTL 3 min for competition details** — Spots count can be slightly stale for up to 3 minutes between a registration and the next cache eviction. A Socket.IO push invalidates the spots counter in real time, but the full competition payload (dates, rewards, judge) is cached. Trade-off: slightly stale secondary data vs significantly reduced MongoDB read load under high traffic.
+
+- **`display: 'flex'` → `opacity: 0` for hidden tabs** — `display: 'none'` would be slightly more memory-efficient (no GPU compositing layer for hidden panes). `opacity: 0` keeps all panes in the render tree and composited. Trade-off: ~4× more GPU layers vs zero-flicker instant switching. Accepted because modern devices handle 4 composited full-screen layers trivially.
+
+- **In-memory access token storage** — The access token lives in a JS variable, not AsyncStorage. This means the access token is lost on app restart (handled by the refresh token flow). Trade-off: tokens cannot be read by other processes (more secure than AsyncStorage which is unencrypted) but requires a refresh-token round-trip on every app cold start.
 
 ---
 
-### 4. Observability & Health Probes
+## What I'd Improve / Change For Real Production
 
-- **Structured Logging (Winston)**:
-  - Generates JSON structured logs in production with timestamp, log level, service tag, duration, and error stacks.
-  - **Traceability / Correlation ID**: `requestLoggerMiddleware` injects an `X-Request-Id` header (using `uuidv4`) into every request and attaches child loggers `req.logger` so all logs across the request lifecycle share the same correlation ID.
-- **Orchestration Probes**:
-  - **Liveness Probe (`GET /health`)**: Returns 200 if the Node.js event loop is healthy.
-  - **Readiness Probe (`GET /ready`)**: Pings MongoDB via `admin().ping()` and verifies Redis connection latency before allowing Kubernetes/Render load balancers to route traffic.
-- **APM & Metrics Integration (Prometheus / Grafana / Datadog)**:
-  - Structured logs capture `durationMs`, `statusCode`, and `route`.
-  - For production, `prom-client` metrics endpoints can be added at `/metrics` exporting:
-    - `http_request_duration_seconds{method, route, status_code}`
-    - `registration_attempts_total{status="success|conflict|error"}`
-    - `mongodb_pool_available_connections`
-
----
-
-### 5. Mobile App Performance
-
-- **Elimination of Unnecessary Re-renders**:
-  - Extracted the Socket.IO-driven spots indicator into an isolated, memoized component: `LiveSpotsTracker.js`.
-  - When Socket.IO broadcasts `spots_updated`, **ONLY `LiveSpotsTracker` re-renders**. The parent `CompetitionHeaderCard` and the overall `CompetitionDetailsScreen` remain un-rendered.
-  - `BottomActionBar`, `JudgeCard`, and `PreviousWinnersCarousel` are wrapped in `React.memo`.
-  - Action handlers (`handleCtaAction`) are memoized with `useCallback`.
-- **Image Caching with `expo-image`**:
-  - Replaced standard React Native `Image` with `expo-image` in `JudgeCard` and `PreviousWinnersCarousel`.
-  - Configured `cachePolicy="memory-disk"` and smooth fading transitions (`transition={150}`), ensuring image assets are cached locally across app restarts.
-- **Error Boundaries**:
-  - Created `ErrorBoundary.js` with fallback error cards and retry buttons.
-  - Wrapped each section (`Header Card`, `Judge Card`, `Winners Carousel`, `Rewards Table`, `Referral Card`) in individual error boundaries. If an unexpected runtime error occurs in one card, the rest of the competition screen functions normally.
-- **Bundle Size Optimization**:
-  - Heavy features (`SubmissionUploadScreen`, `VideoPlayerModal`) are separated and loaded lazily through React Navigation.
-  - Unused Expo SDK modules excluded; bundle analysis via `npx expo-bundle-analyzer` to ensure bundle stays lean.
+- **Split monorepo** — Separate `backend/` into its own repository/service with independent versioning, deploy pipelines, and teams. Consider a dedicated `packages/shared-types` for TypeScript interfaces shared between mobile and backend.
+- **Proper CDN for media** — Use Cloudflare R2 or AWS CloudFront in front of the storage bucket. Signed upload URLs already point to cloud storage, but a CDN is needed for fast video streaming to participants across India.
+- **Full APNs/FCM push notification infrastructure** — Replace client-side Expo Notifications with a server-side notification service (Firebase Admin SDK or Expo Push API with server tokens) so reminders fire even on devices that haven't opened the app recently.
+- **Admin dashboard** — A React web admin panel for organizers to: manage competitions, view all submissions, update lifecycle status manually, export participant lists, and trigger prize disbursements.
+- **Judge portal** — A separate authenticated view for judges to review and score submissions within the platform rather than via email/spreadsheet.
+- **Full i18n** — Extend the bilingual system (currently English/Hindi on the competition details screen) to every screen in the app. Use `i18next` with a dedicated translations file per language.
+- **Automated E2E testing with Detox** — Add Detox E2E tests covering the registration → payment → upload flow. Add Maestro flows for CI smoke tests.
+- **Observability stack** — Add Datadog or Grafana/Prometheus + Loki for metrics, distributed traces (OpenTelemetry), and structured log aggregation in production. Currently only Winston JSON logs to stdout.
+- **Feature flags** — Add LaunchDarkly or a simple home-grown feature flag service to gate new competition types, UI experiments, and backend rollouts without a redeploy.
+- **Multi-region MongoDB** — Use MongoDB Atlas Global Clusters with read replicas in Mumbai and Singapore to reduce latency for Indian users and provide geo-redundancy.
+- **Wallet / payout system** — Implement the ₹10 referral credit as an actual wallet balance that can be applied to future entry fees or paid out via UPI.
+- **TypeScript migration** — Move both projects to TypeScript for better type safety at the mobile/API boundary (shared DTO types).
+- **Proper secret management** — Use AWS Secrets Manager or HashiCorp Vault for rotating JWT secrets and Razorpay API keys, rather than environment variables in a `.env` file.
 
 ---
 
-### 6. Deployment & CI/CD
+## Known Limitations
 
-- **Multi-Stage `Dockerfile`**:
-  - Stage 1: Builds dependencies.
-  - Stage 2: Prunes to production-only modules (`npm ci --only=production`).
-  - Stage 3: Runs non-root user (`USER node`) on Alpine with `dumb-init` for PID 1 signal forwarding and container healthchecks.
-- **Docker Compose (`docker-compose.yml`)**:
-  - Spins up the entire stack with a single command:
-    ```bash
-    docker-compose up --build
-    ```
-  - Includes:
-    1. `backend`: Production Node.js container on port 5000.
-    2. `mongo`: MongoDB 7.0 container configured as a single-node replica set `rs0` (required for ACID multi-document transactions).
-    3. `redis`: Redis 7.2 Alpine container configured with 256MB LRU eviction policy.
-- **GitHub Actions Pipeline (`.github/workflows/ci.yml`)**:
-  - Automated CI triggered on every push and PR to `main`:
-    1. Installs clean dependencies (`npm ci`).
-    2. Runs ESLint code quality gates.
-    3. Executes automated tests against live containerized MongoDB and Redis services.
-    4. Validates Docker multi-stage build.
-- **Environment Documentation**:
-  - Complete `.env.example` in both root and backend directories documenting all runtime variables, security keys, and rotation procedures.
+- **Razorpay in test mode only** — The app uses Razorpay test credentials. Real payment flow requires live credentials and an approved Razorpay business account.
+- **No real file upload** — The submission upload screen generates a signed URL but the actual media upload to S3/GCS and CDN delivery is mocked. In a real deployment the pre-signed URL from `GET /submissions/signed-url` would be used with a `PUT` directly to the storage provider.
+- **Referral wallet credit is recorded but not redeemable** — The `Referral` document is created (so the referrer's ₹10 is tracked), but there is no wallet balance UI or UPI payout flow within assignment scope.
+- **Socket.IO spots updates require the backend to be the same process** — The current implementation broadcasts within a single Node.js process. A horizontally scaled deployment would need the Redis adapter (`@socket.io/redis-adapter`) wired up (the `ioredis` dependency is present, wiring is a 5-line addition).
+- **No admin auth role** — The `GET /submissions` list endpoint is `protect`-guarded but any authenticated user can call it. A production system would add a `role: 'admin'` field to `User` and an `isAdmin` middleware guard.
+- **Expo Go limitations** — Deep links (referral URLs like `feedants://r/CODE`) work correctly in a development build but require a custom URI scheme in `app.json` and a production Expo build for reliable handling on physical devices via Expo Go.
+- **iOS not tested** — Development and testing were done exclusively on Android emulator + Android physical device. The code is written to be cross-platform but iOS-specific edge cases (safe area insets, font rendering) may need minor adjustments.
+- **Background lifecycle cron is single-process** — The `node-cron` job updates competition `status` every minute but only runs in the same process as the API. A production system would run this as a separate worker or use a managed scheduler.
 
+---
+
+## Screen Recording
+
+📹 Screen recording demonstrating the full working flow: **[LINK — to be added after recording]**
+
+### Recording Script
+
+Record the following numbered steps in a single continuous session (estimated 8–10 minutes):
+
+1. **Cold start** — Launch the app on a physical Android device or emulator. Show the login screen appearing (auth guard in place — cannot access home without login).
+2. **New account creation** — Tap "Create Account", fill name/email/phone/password, submit. Confirm the competition details screen appears immediately with **"Not Registered"** pill and **"Register Now • ₹99 Entry Fee"** button. *(Proves new accounts are never auto-registered.)*
+3. **Competition information is dynamic** — Scroll through the full competition screen. Call out: judge name, prize pool ₹1,500, entry fee ₹99, "1 / 20 Booked" spots counter, countdown timer ticking live, all 6 reward tiers, 4 previous winners carousel, important dates grid.
+4. **Registration → payment flow** — Tap "Register Now". Show the RegistrationSheet bottom sheet with Login/Signup card (for unauthenticated users) or Proceed-to-Pay button (for authenticated users). Tap "Proceed to Pay ₹99". Show the Razorpay checkout modal. Complete test payment. Confirm "Registration Confirmed 🎉" alert appears.
+5. **State change after registration** — Show the competition screen re-fetching: "Registered" pill now appears, button changes to "Upload Submission • Registered".
+6. **Live spots update** *(two-device/two-emulator proof)* — Open the app simultaneously on a second device/emulator with a different account. On device 1: complete a registration. Within 2–3 seconds, show the spots counter updating on device 2 via Socket.IO push. *(Proves real-time concurrency handling.)*
+7. **Tab switching** — Tap Home, Explore, Profile, Competitions tabs in quick succession. All switch instantly with zero reload, zero white flash. *(Proves in-memory tab rendering.)*
+8. **Language switch** — Tap "हिंदी" on the header. Show all labels switch to Hindi instantly. Tap "ENG" to switch back.
+9. **Countdown timer** — Leave the app on the competition screen for 10 seconds. Show the countdown decrementing in real time.
+10. **Logout → login again** — Logout from Profile. Confirm login screen appears. Log back in with the registered account. Confirm competition screen shows "Registered" state correctly restored from backend.
+11. **Health endpoints** — Show in a browser or Postman: `GET /api/health` → `{"status":"healthy"}` and `GET /api/docs` → Swagger UI.
+
+---
+
+## License
+
+ISC — Feedants Engineering, 2026
