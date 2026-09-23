@@ -17,6 +17,7 @@ import { THEME } from '../../constants/theme';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { openRazorpayCheckout } from '../../services/razorpayService';
 import apiClient from '../../api/client';
+import { useThrottledCallback } from '../../utils/debounce';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -82,8 +83,8 @@ const RegistrationSheet = ({
     setErrorMessage(null);
   };
 
-  // Full Razorpay Checkout Journey
-  const handleProceedToPay = async () => {
+  // Full Razorpay Checkout Journey (Throttled & Debounced)
+  const handleProceedToPay = useThrottledCallback(async () => {
     if (isPaying) return; // Client-side debounce to prevent duplicate double-taps
     setIsPaying(true);
     setErrorMessage(null);
@@ -171,7 +172,7 @@ const RegistrationSheet = ({
       const backendMsg = err?.response?.data?.message || err?.message || 'Registration failed.';
       setErrorMessage(backendMsg);
     }
-  };
+  }, 1200);
 
   return (
     <Modal

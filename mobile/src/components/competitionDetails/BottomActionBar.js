@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { THEME } from '../../constants/theme';
+import { useThrottledCallback } from '../../utils/debounce';
 
 /**
  * BottomActionBar Component
@@ -120,6 +121,13 @@ const BottomActionBar = ({
 
   const config = getButtonConfig();
 
+  // Debounce/Throttle button taps to prevent rapid double-tap requests (defense-in-depth)
+  const handleThrottledPress = useThrottledCallback(() => {
+    if (!config.disabled && !loading && onPressAction) {
+      onPressAction(config.action);
+    }
+  }, 1000);
+
   return (
     <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       <TouchableOpacity
@@ -128,7 +136,7 @@ const BottomActionBar = ({
           { backgroundColor: config.bgColor },
           config.disabled && styles.disabledButton,
         ]}
-        onPress={() => !config.disabled && onPressAction && onPressAction(config.action)}
+        onPress={handleThrottledPress}
         activeOpacity={config.disabled ? 1 : 0.85}
         disabled={config.disabled || loading}
       >

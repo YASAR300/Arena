@@ -17,6 +17,7 @@ import { THEME } from '../constants/theme';
 import { useLanguage } from '../i18n/LanguageContext';
 import apiClient from '../api/client';
 import { useQueryClient } from '@tanstack/react-query';
+import { useThrottledCallback } from '../utils/debounce';
 
 /**
  * SubmissionUploadScreen
@@ -99,8 +100,8 @@ export default function SubmissionUploadScreen({ route, navigation }) {
     }
   };
 
-  // Perform Upload to Signed URL + Backend Confirmation
-  const handleUploadSubmission = async () => {
+  // Perform Upload to Signed URL + Backend Confirmation (Throttled & Debounced)
+  const handleUploadSubmission = useThrottledCallback(async () => {
     if (!selectedAsset) {
       Alert.alert('Select Media', 'Please select a video or image file to upload.');
       return;
@@ -176,7 +177,7 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       const msg = err.response?.data?.message || err.message || 'Failed to upload submission. Please check connection and retry.';
       setErrorMessage(msg);
     }
-  };
+  }, 1200);
 
   return (
     <SafeAreaView style={styles.safeArea}>
