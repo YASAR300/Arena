@@ -23,11 +23,13 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
  */
 export default function RazorpayCheckoutModal({
   visible,
-  options = {},
+  options,
   onSuccess,
   onFailure,
   onClose,
 }) {
+  const safeOptions = options || {};
+
   const [selectedMethod, setSelectedMethod] = useState('UPI'); // 'UPI' | 'CARD' | 'NETBANKING'
   const [selectedUpiApp, setSelectedUpiApp] = useState('Google Pay');
   const [upiId, setUpiId] = useState('');
@@ -36,7 +38,7 @@ export default function RazorpayCheckoutModal({
   const [cardNumber, setCardNumber] = useState('4111 1111 1111 1111');
   const [cardExpiry, setCardExpiry] = useState('12/28');
   const [cardCvv, setCardCvv] = useState('123');
-  const [cardName, setCardName] = useState(options.prefill?.name || 'Feedants Participant');
+  const [cardName, setCardName] = useState(safeOptions.prefill?.name || 'Feedants Participant');
 
   // Netbanking state
   const [selectedBank, setSelectedBank] = useState('HDFC Bank');
@@ -45,8 +47,8 @@ export default function RazorpayCheckoutModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState('');
 
-  const amountInRupees = (options.amount ? options.amount / 100 : 90).toFixed(2);
-  const orderId = options.orderId || `order_test_${Date.now()}`;
+  const amountInRupees = (safeOptions.amount ? safeOptions.amount / 100 : 90).toFixed(2);
+  const orderId = safeOptions.orderId || `order_test_${Date.now()}`;
 
   // Simulate payment processing flow
   const handlePaySuccess = async () => {
@@ -95,9 +97,9 @@ export default function RazorpayCheckoutModal({
                   <Text style={styles.rzpLogoText}>R</Text>
                 </View>
                 <View style={{ marginLeft: 10 }}>
-                  <Text style={styles.merchantName}>{options.name || 'Feedants Arena'}</Text>
+                  <Text style={styles.merchantName}>{safeOptions.name || 'Feedants Arena'}</Text>
                   <Text style={styles.orderDescription} numberOfLines={1}>
-                    {options.description || 'Competition Entry Fee'}
+                    {safeOptions.description || 'Competition Entry Fee'}
                   </Text>
                 </View>
               </View>

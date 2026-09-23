@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8,6 +8,7 @@ import { LanguageProvider } from './src/i18n/LanguageContext';
 import { linking } from './src/navigation/linking';
 import { navigationRef } from './src/navigation/navigationRef';
 import OfflineBanner from './src/components/common/OfflineBanner';
+import useAuthStore from './src/store/authStore';
 import { registerRootComponent } from 'expo';
 
 // Configure TanStack Query Client for competition polling & caching
@@ -22,6 +23,11 @@ const queryClient = new QueryClient({
 });
 
 function App() {
+  const initAuth = useAuthStore((state) => state.initAuth);
+
+  useEffect(() => {
+    initAuth();
+  }, [initAuth]);
   return (
     <SafeAreaProvider>
       <LanguageProvider>

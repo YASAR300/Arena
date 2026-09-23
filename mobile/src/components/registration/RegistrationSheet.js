@@ -49,7 +49,7 @@ const RegistrationSheet = ({
 
   // Razorpay Checkout Modal state
   const [isRazorpayModalVisible, setIsRazorpayModalVisible] = useState(false);
-  const [razorpayOptions, setRazorpayOptions] = useState(null);
+  const [razorpayOptions, setRazorpayOptions] = useState({});
 
   // Sync initial referral code from deep link
   useEffect(() => {

@@ -69,13 +69,17 @@ export default function LoginScreen({ route, navigation }) {
         >
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={styles.backButton}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="arrow-back" size={24} color="#0F172A" />
-            </TouchableOpacity>
+            {navigation.canGoBack() ? (
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                style={styles.backButton}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-back" size={24} color="#0F172A" />
+              </TouchableOpacity>
+            ) : (
+              <View style={{ width: 40 }} />
+            )}
             <Text style={styles.brandTitle}>Feedants Arena</Text>
             <View style={{ width: 40 }} />
           </View>
