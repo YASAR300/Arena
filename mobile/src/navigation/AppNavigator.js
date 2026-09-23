@@ -12,14 +12,18 @@ const Stack = createNativeStackNavigator();
 export default function AppNavigator() {
   return (
     <Stack.Navigator
-      initialRouteName={ROUTES.HOME}
+      initialRouteName={ROUTES.COMPETITION_DETAILS}
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
       }}
     >
+      <Stack.Screen
+        name={ROUTES.COMPETITION_DETAILS}
+        component={CompetitionDetailsScreen}
+        initialParams={{ competitionSlug: 'feedants-classical-dance' }}
+      />
       <Stack.Screen name={ROUTES.HOME} component={HomeScreen} />
-      <Stack.Screen name={ROUTES.COMPETITION_DETAILS} component={CompetitionDetailsScreen} />
     </Stack.Navigator>
   );
 }
