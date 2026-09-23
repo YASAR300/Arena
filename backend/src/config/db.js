@@ -1,9 +1,12 @@
 const mongoose = require('mongoose');
+const dns = require('dns');
 
-/**
- * MongoDB Atlas connection manager with production connection pooling
- * Configured for high concurrency (concurrent registration & spot booking)
- */
+// Configure reliable DNS servers to handle Atlas SRV lookups on networks with restrictive local DNS
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+} catch (e) {
+  // Ignore in environments where setting DNS servers is restricted
+}
 const connectDB = async () => {
   const uri = process.env.MONGODB_URI;
 
