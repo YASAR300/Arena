@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { Competition, Registration, Payment } = require('../models');
 const paymentService = require('./payment.service');
+const cacheService = require('./cache.service');
 const ApiError = require('../utils/apiError');
 
 /**
@@ -228,6 +229,12 @@ const confirmRegistration = async ({ competitionId, userId, razorpay_order_id, r
     await session.endSession();
   }
 
+  // Invalidate Redis cache immediately so spots count is 100% accurate
+  await cacheService.invalidateCompetition(competitionId);
+  if (competition.slug) {
+    await cacheService.invalidateCompetition(competition.slug);
+  }
+
   return {
     registration,
     spotsLeft: Math.max(0, competition.totalSpots - (competition.spotsBooked + 1)),
@@ -295,6 +302,12 @@ const cancelRegistration = async (competitionId, userId) => {
     });
   } finally {
     await session.endSession();
+  }
+
+  // Invalidate Redis cache immediately so spots count is 100% accurate
+  await cacheService.invalidateCompetition(competitionId);
+  if (competition.slug) {
+    await cacheService.invalidateCompetition(competition.slug);
   }
 
   return { message: 'Registration cancelled and refund initiated' };

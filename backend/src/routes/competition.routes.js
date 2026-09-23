@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { getCompetitionDetails, getCompetitionSpots } = require('../controllers/competition.controller');
+const {
+  getCompetitionDetails,
+  getCompetitionSpots,
+  listCompetitions,
+  listPreviousWinners,
+} = require('../controllers/competition.controller');
 const { protect, optionalAuth } = require('../middlewares/auth.middleware');
 
 /**
@@ -10,45 +15,16 @@ const { protect, optionalAuth } = require('../middlewares/auth.middleware');
  *   description: Competition discovery and detail endpoints
  */
 
-/**
- * @swagger
- * /api/competitions/{idOrSlug}:
- *   get:
- *     summary: Full competition details (auth optional — returns currentUserState if logged in)
- *     tags: [Competitions]
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: idOrSlug
- *         required: true
- *         schema:
- *           type: string
- *         description: Competition MongoDB ID or URL slug
- *     responses:
- *       200:
- *         description: Competition details with currentUserState
- *       404:
- *         description: Competition not found
- */
-router.get('/:idOrSlug', optionalAuth, getCompetitionDetails);
+/** GET /api/competitions (Paginated) */
+router.get('/', listCompetitions);
 
-/**
- * @swagger
- * /api/competitions/{id}/spots:
- *   get:
- *     summary: Lightweight spots polling endpoint (public)
- *     tags: [Competitions]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Spot counts and registration deadline
- */
+/** GET /api/competitions/series/:seriesId/winners (Paginated) */
+router.get('/series/:seriesId/winners', listPreviousWinners);
+
+/** GET /api/competitions/:id/spots (Lightweight polling) */
 router.get('/:id/spots', getCompetitionSpots);
+
+/** GET /api/competitions/:idOrSlug (Full details with Redis cache-aside) */
+router.get('/:idOrSlug', optionalAuth, getCompetitionDetails);
 
 module.exports = router;

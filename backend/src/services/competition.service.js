@@ -94,56 +94,83 @@ const getLifecycleCTA = (status) => {
   }
 };
 
+const cacheService = require('./cache.service');
+
 /**
- * Get full competition details by id or slug with populated judge and previous winners
+ * Get full competition details by id or slug with populated judge and previous winners.
+ * Implements Cache-Aside pattern with Redis for ultra-high read concurrency.
  */
 const getCompetitionDetails = async (idOrSlug, userId) => {
-  let query;
-  if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
-    query = { _id: idOrSlug, isActive: true };
-  } else {
-    query = { slug: idOrSlug, isActive: true };
+  const cacheKey = `competition:details:${idOrSlug}`;
+  let baseData = await cacheService.get(cacheKey);
+
+  let competitionDoc;
+  if (!baseData) {
+    let query;
+    if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
+      query = { _id: idOrSlug, isActive: true };
+    } else {
+      query = { slug: idOrSlug, isActive: true };
+    }
+
+    const competition = await Competition.findOne(query).populate('judge').lean({ virtuals: true });
+    if (!competition) return null;
+
+    // Fetch bounded previous winners (using index on seriesId + rank)
+    const seriesId = competition.slug;
+    const previousWinners = await PreviousWinner.find({ seriesId })
+      .sort({ rank: 1 })
+      .limit(10)
+      .lean();
+
+    baseData = {
+      ...competition,
+      spotsLeft: Math.max(0, competition.totalSpots - competition.spotsBooked),
+      isSoldOut: competition.spotsBooked >= competition.totalSpots,
+      previousWinners,
+    };
+
+    // Cache shared competition data in Redis (TTL: 3 minutes)
+    await cacheService.set(cacheKey, baseData, 180);
+    if (baseData.slug && baseData.slug !== idOrSlug) {
+      await cacheService.set(`competition:details:${baseData.slug}`, baseData, 180);
+    }
   }
 
-  const competition = await Competition.findOne(query).populate('judge').lean({ virtuals: true });
-
-  if (!competition) return null;
-
-  // Fetch previous winners for this competition's series
-  const seriesId = competition.slug; // default: use slug as seriesId
-  const previousWinners = await PreviousWinner.find({ seriesId })
-    .sort({ rank: 1 })
-    .limit(10)
-    .lean();
-
-  // Compute user CTA state (works for authed and anonymous users)
-  // Must re-query competition as a document (not lean) for methods
-  const competitionDoc = await Competition.findOne(query);
-  const currentUserState = await computeUserCompetitionState(competitionDoc, userId);
+  // Compute personalized user state (or anonymous state if no userId)
+  competitionDoc = await Competition.findById(baseData._id);
+  const currentUserState = competitionDoc
+    ? await computeUserCompetitionState(competitionDoc, userId)
+    : { canRegister: false, ctaAction: 'LOGIN_REQUIRED' };
 
   return {
-    ...competition,
-    spotsLeft: Math.max(0, competition.totalSpots - competition.spotsBooked),
-    isSoldOut: competition.spotsBooked >= competition.totalSpots,
-    previousWinners,
+    ...baseData,
     currentUserState,
   };
 };
 
 /**
- * Get lightweight spots data for polling
+ * Get lightweight spots data for polling (Cached with 30s TTL)
  */
 const getCompetitionSpots = async (competitionId) => {
+  const cacheKey = `competition:spots:${competitionId}`;
+  const cached = await cacheService.get(cacheKey);
+  if (cached) return cached;
+
   const competition = await Competition.findById(competitionId)
     .select('totalSpots spotsBooked registrationEndAt')
     .lean();
   if (!competition) return null;
-  return {
+
+  const spots = {
     totalSpots: competition.totalSpots,
     spotsBooked: competition.spotsBooked,
     spotsLeft: Math.max(0, competition.totalSpots - competition.spotsBooked),
     registrationEndAt: competition.registrationEndAt,
   };
+
+  await cacheService.set(cacheKey, spots, 30);
+  return spots;
 };
 
 module.exports = { getCompetitionDetails, getCompetitionSpots, computeUserCompetitionState };

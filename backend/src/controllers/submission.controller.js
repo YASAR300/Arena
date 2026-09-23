@@ -2,6 +2,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const submissionService = require('../services/submission.service');
+const { Submission } = require('../models');
+const { parsePagination, formatPaginatedResponse } = require('../utils/pagination');
 
 /** GET /api/competitions/:id/submissions/signed-url */
 const getSignedUploadUrl = asyncHandler(async (req, res) => {
@@ -43,4 +45,38 @@ const getMySubmission = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, submission, 'Submission fetched');
 });
 
-module.exports = { getSignedUploadUrl, createSubmission, getMySubmission };
+/** GET /api/competitions/:id/submissions (Paginated submissions list for judging / admin) */
+const listSubmissions = asyncHandler(async (req, res) => {
+  const { id: competitionId } = req.params;
+  const { page, limit, skip } = parsePagination(req.query);
+  const { status } = req.query;
+
+  const filter = { competitionId };
+  if (status) filter.status = status;
+
+  const [submissions, total] = await Promise.all([
+    Submission.find(filter)
+      .populate('userId', 'name email')
+      .sort({ submittedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Submission.countDocuments(filter),
+  ]);
+
+  const paginated = formatPaginatedResponse({
+    data: submissions,
+    total,
+    page,
+    limit,
+  });
+
+  return ApiResponse.success(res, paginated, 'Submissions list fetched');
+});
+
+module.exports = {
+  getSignedUploadUrl,
+  createSubmission,
+  getMySubmission,
+  listSubmissions,
+};
