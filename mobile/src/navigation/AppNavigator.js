@@ -2,6 +2,7 @@ import React from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ROUTES } from './routes';
+import MainTabsScreen from '../screens/MainTabsScreen';
 import HomeScreen from '../screens/HomeScreen';
 import CompetitionDetailsScreen from '../screens/CompetitionDetailsScreen';
 import SubmissionUploadScreen from '../screens/SubmissionUploadScreen';
@@ -14,7 +15,7 @@ import useAuthStore from '../store/authStore';
 const Stack = createNativeStackNavigator();
 
 /**
- * Root Stack Navigator with Strict Authentication Guard
+ * Root Stack Navigator with Strict Authentication Guard & Instant Tab Shell
  * Users MUST log in or create an account before accessing the competition / home screen.
  */
 export default function AppNavigator() {
@@ -45,6 +46,11 @@ export default function AppNavigator() {
       ) : (
         // MAIN APPLICATION STACK: Available after successful authentication
         <Stack.Group>
+          <Stack.Screen
+            name={ROUTES.MAIN_TABS}
+            component={MainTabsScreen}
+            initialParams={{ initialTab: 'competitions', competitionSlug: 'feedants-classical-dance' }}
+          />
           <Stack.Screen
             name={ROUTES.COMPETITION_DETAILS}
             component={CompetitionDetailsScreen}

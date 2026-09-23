@@ -27,6 +27,9 @@ export const linking = {
   ],
   config: {
     screens: {
+      [ROUTES.MAIN_TABS]: {
+        path: 'tabs/:tab?',
+      },
       [ROUTES.COMPETITION_DETAILS]: {
         path: 'competitions/:slug',
         parse: {

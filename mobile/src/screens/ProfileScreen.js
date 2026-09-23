@@ -17,7 +17,7 @@ import { ROUTES } from '../navigation/routes';
 import useAuthStore, { secureStorage } from '../store/authStore';
 import BottomTabBar from '../components/competitionDetails/BottomTabBar';
 
-export default function ProfileScreen({ navigation }) {
+export default function ProfileScreen({ navigation, hideBottomBar = false, onNavigateTab }) {
   const { user, logout } = useAuthStore();
 
   const [name, setName] = useState(user?.name || 'Feedants Participant');
@@ -90,6 +90,14 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const handleTabPress = (tab) => {
+    if (onNavigateTab) {
+      if (tab === 'create') {
+        navigation.navigate(ROUTES.SUBMISSION_UPLOAD);
+      } else {
+        onNavigateTab(tab);
+      }
+      return;
+    }
     switch (tab) {
       case 'home':
         navigation.navigate(ROUTES.HOME);
@@ -115,9 +123,11 @@ export default function ProfileScreen({ navigation }) {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => {
-            if (navigation.canGoBack()) {
+            if (onNavigateTab) {
+              onNavigateTab('competitions');
+            } else if (navigation?.canGoBack && navigation.canGoBack()) {
               navigation.goBack();
-            } else {
+            } else if (navigation) {
               navigation.navigate(ROUTES.COMPETITION_DETAILS);
             }
           }}
@@ -270,7 +280,7 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.actionsCard}>
           <TouchableOpacity
             style={styles.actionRow}
-            onPress={() => navigation.navigate(ROUTES.COMPETITION_DETAILS)}
+            onPress={() => (onNavigateTab ? onNavigateTab('competitions') : navigation.navigate(ROUTES.COMPETITION_DETAILS))}
           >
             <View style={styles.actionIconBox}>
               <Ionicons name="trophy-outline" size={20} color="#005F60" />
@@ -306,7 +316,7 @@ export default function ProfileScreen({ navigation }) {
       </ScrollView>
 
       {/* Persistent Bottom Tab Bar */}
-      <BottomTabBar activeTab="profile" onTabPress={handleTabPress} />
+      {!hideBottomBar && <BottomTabBar activeTab="profile" onTabPress={handleTabPress} />}
     </SafeAreaView>
   );
 }

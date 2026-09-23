@@ -14,7 +14,7 @@ import { THEME } from '../constants/theme';
 import { ROUTES } from '../navigation/routes';
 import BottomTabBar from '../components/competitionDetails/BottomTabBar';
 
-export default function ExploreScreen({ navigation }) {
+export default function ExploreScreen({ navigation, hideBottomBar = false, onNavigateTab }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
 
@@ -60,6 +60,14 @@ export default function ExploreScreen({ navigation }) {
   });
 
   const handleTabPress = (tab) => {
+    if (onNavigateTab) {
+      if (tab === 'create') {
+        navigation.navigate(ROUTES.SUBMISSION_UPLOAD);
+      } else {
+        onNavigateTab(tab);
+      }
+      return;
+    }
     switch (tab) {
       case 'home':
         navigation.navigate(ROUTES.HOME);
@@ -85,9 +93,11 @@ export default function ExploreScreen({ navigation }) {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => {
-            if (navigation.canGoBack()) {
+            if (onNavigateTab) {
+              onNavigateTab('competitions');
+            } else if (navigation?.canGoBack && navigation.canGoBack()) {
               navigation.goBack();
-            } else {
+            } else if (navigation) {
               navigation.navigate(ROUTES.COMPETITION_DETAILS);
             }
           }}
@@ -150,7 +160,7 @@ export default function ExploreScreen({ navigation }) {
         {/* Featured Arena Banner */}
         <TouchableOpacity
           style={styles.featuredBanner}
-          onPress={() => navigation.navigate(ROUTES.COMPETITION_DETAILS)}
+          onPress={() => (onNavigateTab ? onNavigateTab('competitions') : navigation.navigate(ROUTES.COMPETITION_DETAILS))}
           activeOpacity={0.9}
         >
           <View style={styles.featuredBadge}>
@@ -177,7 +187,7 @@ export default function ExploreScreen({ navigation }) {
           <TouchableOpacity
             key={item.id}
             style={styles.compCard}
-            onPress={() => navigation.navigate(ROUTES.COMPETITION_DETAILS)}
+            onPress={() => (onNavigateTab ? onNavigateTab('competitions') : navigation.navigate(ROUTES.COMPETITION_DETAILS))}
             activeOpacity={0.8}
           >
             <Image source={{ uri: item.image }} style={styles.compImage} />
@@ -209,7 +219,7 @@ export default function ExploreScreen({ navigation }) {
       </ScrollView>
 
       {/* Persistent Bottom Tab Bar */}
-      <BottomTabBar activeTab="explore" onTabPress={handleTabPress} />
+      {!hideBottomBar && <BottomTabBar activeTab="explore" onTabPress={handleTabPress} />}
     </SafeAreaView>
   );
 }

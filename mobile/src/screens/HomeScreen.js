@@ -14,10 +14,18 @@ import { THEME } from '../constants/theme';
 import useAuthStore from '../store/authStore';
 import BottomTabBar from '../components/competitionDetails/BottomTabBar';
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, hideBottomBar = false, onNavigateTab }) {
   const { user } = useAuthStore();
 
   const handleTabPress = (tab) => {
+    if (onNavigateTab) {
+      if (tab === 'create') {
+        navigation.navigate(ROUTES.SUBMISSION_UPLOAD);
+      } else {
+        onNavigateTab(tab);
+      }
+      return;
+    }
     switch (tab) {
       case 'home':
         break;
@@ -60,7 +68,7 @@ export default function HomeScreen({ navigation }) {
         {/* Hero Card: Feedants Classical Dance */}
         <TouchableOpacity
           style={styles.heroCard}
-          onPress={() => navigation.navigate(ROUTES.COMPETITION_DETAILS)}
+          onPress={() => (onNavigateTab ? onNavigateTab('competitions') : navigation.navigate(ROUTES.COMPETITION_DETAILS))}
           activeOpacity={0.9}
         >
           <View style={styles.heroBadgeRow}>
@@ -94,7 +102,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.actionsGrid}>
           <TouchableOpacity
             style={styles.actionCard}
-            onPress={() => navigation.navigate(ROUTES.COMPETITION_DETAILS)}
+            onPress={() => (onNavigateTab ? onNavigateTab('competitions') : navigation.navigate(ROUTES.COMPETITION_DETAILS))}
             activeOpacity={0.8}
           >
             <View style={[styles.actionIcon, { backgroundColor: '#E6F4F1' }]}>
@@ -118,7 +126,7 @@ export default function HomeScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.actionCard}
-            onPress={() => navigation.navigate(ROUTES.EXPLORE)}
+            onPress={() => (onNavigateTab ? onNavigateTab('explore') : navigation.navigate(ROUTES.EXPLORE))}
             activeOpacity={0.8}
           >
             <View style={[styles.actionIcon, { backgroundColor: '#E0E7FF' }]}>
@@ -130,7 +138,7 @@ export default function HomeScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.actionCard}
-            onPress={() => navigation.navigate(ROUTES.PROFILE)}
+            onPress={() => (onNavigateTab ? onNavigateTab('profile') : navigation.navigate(ROUTES.PROFILE))}
             activeOpacity={0.8}
           >
             <View style={[styles.actionIcon, { backgroundColor: '#FCE7F3' }]}>
@@ -179,7 +187,7 @@ export default function HomeScreen({ navigation }) {
       </ScrollView>
 
       {/* Persistent Bottom Tab Bar */}
-      <BottomTabBar activeTab="home" onTabPress={handleTabPress} />
+      {!hideBottomBar && <BottomTabBar activeTab="home" onTabPress={handleTabPress} />}
     </SafeAreaView>
   );
 }

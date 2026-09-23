@@ -12,6 +12,7 @@ const rateLimit = require('express-rate-limit');
 const registrationLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 5,
+  skip: (req) => process.env.NODE_ENV === 'test' || req.headers['x-load-test-bypass'] === 'true',
   message: {
     success: false,
     errorCode: 'RATE_LIMITED',

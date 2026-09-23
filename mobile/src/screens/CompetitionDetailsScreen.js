@@ -39,8 +39,13 @@ import RegistrationSheet from '../components/registration/RegistrationSheet';
  * CompetitionDetailsScreen Master Screen
  * Pixel-perfect implementation of Objective_Page.png powered by live backend APIs
  */
-export default function CompetitionDetailsScreen({ route, navigation }) {
-  const { competitionSlug = 'feedants-classical-dance' } = route.params || {};
+export default function CompetitionDetailsScreen({
+  route,
+  navigation,
+  hideBottomBar = false,
+  onNavigateTab,
+}) {
+  const { competitionSlug = 'feedants-classical-dance' } = route?.params || {};
   const { t } = useLanguage();
 
   const {
@@ -113,9 +118,11 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
       {/* 1. Screen Header with Back, Auth, & Language Switcher */}
       <ScreenHeader
         onBack={() => {
-          if (navigation.canGoBack()) {
+          if (onNavigateTab) {
+            onNavigateTab('home');
+          } else if (navigation?.canGoBack && navigation.canGoBack()) {
             navigation.goBack();
-          } else {
+          } else if (navigation) {
             navigation.navigate(ROUTES.HOME);
           }
         }}
@@ -226,28 +233,34 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
       )}
 
       {/* 15. Persistent App Bottom Navigation Bar */}
-      <BottomTabBar
-        activeTab={activeBottomNav}
-        onTabPress={(tab) => {
-          setActiveBottomNav(tab);
-          switch (tab) {
-            case 'home':
-              navigation.navigate(ROUTES.HOME);
-              break;
-            case 'explore':
-              navigation.navigate(ROUTES.EXPLORE);
-              break;
-            case 'create':
-              navigation.navigate(ROUTES.SUBMISSION_UPLOAD, { competition });
-              break;
-            case 'competitions':
-              break;
-            case 'profile':
-              navigation.navigate(ROUTES.PROFILE);
-              break;
-          }
-        }}
-      />
+      {!hideBottomBar && (
+        <BottomTabBar
+          activeTab={activeBottomNav}
+          onTabPress={(tab) => {
+            if (onNavigateTab) {
+              onNavigateTab(tab);
+            } else {
+              setActiveBottomNav(tab);
+              switch (tab) {
+                case 'home':
+                  navigation.navigate(ROUTES.HOME);
+                  break;
+                case 'explore':
+                  navigation.navigate(ROUTES.EXPLORE);
+                  break;
+                case 'create':
+                  navigation.navigate(ROUTES.SUBMISSION_UPLOAD, { competition });
+                  break;
+                case 'competitions':
+                  break;
+                case 'profile':
+                  navigation.navigate(ROUTES.PROFILE);
+                  break;
+              }
+            }
+          }}
+        />
+      )}
 
       {/* 16. Registration & Razorpay Payment Bottom Sheet */}
       <RegistrationSheet
