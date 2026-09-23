@@ -13,6 +13,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../constants/theme';
 import { useLanguage } from '../i18n/LanguageContext';
+import { ROUTES } from '../navigation/routes';
 import { useCompetitionDetails, useRegistrationMutation, useSubmissionMutation } from '../hooks/useCompetitionDetails';
 import ScreenHeader from '../components/competitionDetails/ScreenHeader';
 import CompetitionHeaderCard from '../components/competitionDetails/CompetitionHeaderCard';
@@ -63,54 +64,17 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
         break;
 
       case 'UPLOAD_SUBMISSION':
-        try {
-          const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!permission.granted) {
-            Alert.alert('Permission Denied', 'Camera roll access is required to upload your submission.');
-            return;
-          }
-
-          const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['videos', 'images'],
-            allowsEditing: true,
-            quality: 0.8,
-          });
-
-          if (!result.canceled && result.assets && result.assets.length > 0) {
-            const asset = result.assets[0];
-            Alert.alert(
-              'Upload Submission',
-              `Submit video file (${asset.fileName || 'dance_performance.mp4'}) for judging?`,
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Submit Entry',
-                  onPress: async () => {
-                    try {
-                      await submissionMutation.mutateAsync({
-                        title: 'Feedants Classical Dance Submission',
-                        mediaUrl: asset.uri,
-                      });
-                      Alert.alert('Submitted! 🎉', 'Your submission has been uploaded successfully and sent for judging.');
-                    } catch (uploadErr) {
-                      Alert.alert('Upload Error', uploadErr.message || 'Failed to record submission.');
-                    }
-                  },
-                },
-              ]
-            );
-          }
-        } catch (e) {
-          Alert.alert('Error', 'Unable to pick video: ' + e.message);
-        }
+        navigation.navigate(ROUTES.SUBMISSION_UPLOAD, {
+          competition,
+          existingSubmission: null,
+        });
         break;
 
       case 'SUBMISSION_UPLOADED':
-        Alert.alert(
-          t('submissionUploaded'),
-          'Your entry has been received and verified. Good luck for the results!',
-          [{ text: 'OK' }]
-        );
+        navigation.navigate(ROUTES.SUBMISSION_UPLOAD, {
+          competition,
+          existingSubmission: competition?.currentUserState?.submission || { status: 'SUBMITTED' },
+        });
         break;
 
       case 'VIEW_RESULTS':

@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ROUTES } from './routes';
 import HomeScreen from '../screens/HomeScreen';
 import CompetitionDetailsScreen from '../screens/CompetitionDetailsScreen';
+import SubmissionUploadScreen from '../screens/SubmissionUploadScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -22,6 +23,10 @@ export default function AppNavigator() {
         name={ROUTES.COMPETITION_DETAILS}
         component={CompetitionDetailsScreen}
         initialParams={{ competitionSlug: 'feedants-classical-dance' }}
+      />
+      <Stack.Screen
+        name={ROUTES.SUBMISSION_UPLOAD}
+        component={SubmissionUploadScreen}
       />
       <Stack.Screen name={ROUTES.HOME} component={HomeScreen} />
     </Stack.Navigator>
