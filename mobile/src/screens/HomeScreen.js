@@ -55,7 +55,9 @@ export default function HomeScreen({ navigation, hideBottomBar = false, onNaviga
 
         <TouchableOpacity
           style={styles.profileAvatarBtn}
-          onPress={() => navigation.navigate(ROUTES.PROFILE)}
+          onPress={() =>
+            onNavigateTab ? onNavigateTab('profile') : navigation.navigate(ROUTES.PROFILE)
+          }
           activeOpacity={0.8}
         >
           <Text style={styles.profileAvatarText}>

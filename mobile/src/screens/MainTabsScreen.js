@@ -9,9 +9,18 @@ import { ROUTES } from '../navigation/routes';
 
 /**
  * MainTabsScreen
- * Unified tab shell that renders Home, Explore, Competitions, and Profile
- * views simultaneously in-memory. Switches tabs in 0ms without re-rendering,
- * re-mounting, re-fetching, or stack page reloading.
+ * Unified tab shell that renders all tab panes simultaneously in-memory.
+ *
+ * Uses absoluteFill + opacity + pointerEvents for ZERO-ms, ZERO-flicker tab
+ * switching on both Android and iOS.
+ *
+ * Why NOT display:'none'?
+ *   On Android, toggling display:'none' removes the node from the layout tree
+ *   entirely, causing a brief layout recalculation & flicker on each switch.
+ *
+ * Why opacity:0 + pointerEvents:'none'?
+ *   The view stays in the layout tree (no remount / re-fetch), becomes invisible,
+ *   and blocks touch events — a pure visual toggle with zero side-effects.
  */
 export default function MainTabsScreen({ navigation, route }) {
   const [activeTab, setActiveTab] = useState(
@@ -34,12 +43,11 @@ export default function MainTabsScreen({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      {/* 1. Competitions Tab Pane (Active / Details) */}
+
+      {/* ── Competitions Tab Pane ── */}
       <View
-        style={[
-          styles.tabPane,
-          activeTab === 'competitions' ? styles.paneVisible : styles.paneHidden,
-        ]}
+        style={[styles.tabPane, activeTab !== 'competitions' && styles.paneHidden]}
+        pointerEvents={activeTab === 'competitions' ? 'box-none' : 'none'}
       >
         <CompetitionDetailsScreen
           navigation={navigation}
@@ -49,12 +57,10 @@ export default function MainTabsScreen({ navigation, route }) {
         />
       </View>
 
-      {/* 2. Home Tab Pane */}
+      {/* ── Home Tab Pane ── */}
       <View
-        style={[
-          styles.tabPane,
-          activeTab === 'home' ? styles.paneVisible : styles.paneHidden,
-        ]}
+        style={[styles.tabPane, activeTab !== 'home' && styles.paneHidden]}
+        pointerEvents={activeTab === 'home' ? 'box-none' : 'none'}
       >
         <HomeScreen
           navigation={navigation}
@@ -63,12 +69,10 @@ export default function MainTabsScreen({ navigation, route }) {
         />
       </View>
 
-      {/* 3. Explore Tab Pane */}
+      {/* ── Explore Tab Pane ── */}
       <View
-        style={[
-          styles.tabPane,
-          activeTab === 'explore' ? styles.paneVisible : styles.paneHidden,
-        ]}
+        style={[styles.tabPane, activeTab !== 'explore' && styles.paneHidden]}
+        pointerEvents={activeTab === 'explore' ? 'box-none' : 'none'}
       >
         <ExploreScreen
           navigation={navigation}
@@ -77,12 +81,10 @@ export default function MainTabsScreen({ navigation, route }) {
         />
       </View>
 
-      {/* 4. Profile Tab Pane */}
+      {/* ── Profile Tab Pane ── */}
       <View
-        style={[
-          styles.tabPane,
-          activeTab === 'profile' ? styles.paneVisible : styles.paneHidden,
-        ]}
+        style={[styles.tabPane, activeTab !== 'profile' && styles.paneHidden]}
+        pointerEvents={activeTab === 'profile' ? 'box-none' : 'none'}
       >
         <ProfileScreen
           navigation={navigation}
@@ -91,8 +93,11 @@ export default function MainTabsScreen({ navigation, route }) {
         />
       </View>
 
-      {/* Single Fixed Bottom Tab Bar */}
-      <BottomTabBar activeTab={activeTab} onTabPress={handleTabPress} />
+      {/* ── Bottom Tab Bar — always on top via absolute + zIndex ── */}
+      <View style={styles.tabBarWrapper} pointerEvents="box-none">
+        <BottomTabBar activeTab={activeTab} onTabPress={handleTabPress} />
+      </View>
+
     </View>
   );
 }
@@ -102,13 +107,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  // Every pane fills the full screen area ABOVE the tab bar
   tabPane: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
+    bottom: 62, // tab bar height — keeps content from being hidden behind bar
   },
-  paneVisible: {
-    display: 'flex',
-  },
+  // Hidden pane: invisible, non-interactive, below active pane in z-order
   paneHidden: {
-    display: 'none',
+    opacity: 0,
+    zIndex: -1,
+  },
+  // Tab bar fixed at the very bottom, above all panes
+  tabBarWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    backgroundColor: '#FFFFFF',
+    // Subtle top shadow to visually separate from content
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });
