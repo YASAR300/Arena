@@ -7,6 +7,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const { Server } = require('socket.io');
 const app = require('./app');
 const { connectDB, disconnectDB } = require('./config/db');
+const { startLifecycleJob } = require('./jobs/lifecycle.job');
 
 const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
@@ -59,6 +60,9 @@ const startServer = async () => {
 
     server.listen(PORT, () => {
       console.log(`[Server] Feedants API running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
+      console.log(`[Server] API Docs available at http://localhost:${PORT}/api-docs`);
+      // Start competition lifecycle monitoring job
+      startLifecycleJob(io);
     });
   } catch (error) {
     console.error('[Server] Failed to start server:', error.message);
