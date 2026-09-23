@@ -74,7 +74,12 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config;
 
     // Check if error is 401 Unauthorized and request has not already retried
-    if (error.response && error.response.status === 401 && !originalRequest._retry) {
+    const isAuthEndpoint =
+      originalRequest?.url?.includes('/auth/login') ||
+      originalRequest?.url?.includes('/auth/signup') ||
+      originalRequest?.url?.includes('/auth/refresh-token');
+
+    if (error.response && error.response.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });

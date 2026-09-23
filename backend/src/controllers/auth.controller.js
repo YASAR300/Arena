@@ -10,8 +10,12 @@ const ApiResponse = require('../utils/apiResponse');
 const signup = asyncHandler(async (req, res) => {
   const { name, email, phone, password } = req.body;
 
-  // Check uniqueness
-  const existing = await User.findOne({ $or: [{ email }, { phone }] });
+  // Check uniqueness (safely check phone only if provided to prevent undefined matching)
+  const orConditions = [{ email: email.trim().toLowerCase() }];
+  if (phone && phone.trim()) {
+    orConditions.push({ phone: phone.trim() });
+  }
+  const existing = await User.findOne({ $or: orConditions });
   if (existing) {
     throw ApiError.conflict('An account with this email or phone already exists');
   }
