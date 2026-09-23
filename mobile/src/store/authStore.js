@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import apiClient from '../api/client';
+import apiClient, { setAuthTokens, clearAuthTokens } from '../api/client';
+import { queryClient } from '../api/queryClient';
 import secureStorage from './secureStorage';
 
 export { secureStorage };
@@ -21,6 +22,7 @@ export const useAuthStore = create((set, get) => ({
       ]);
 
       if (token) {
+        setAuthTokens(token);
         set({
           accessToken: token,
           refreshToken: refresh,
@@ -29,9 +31,11 @@ export const useAuthStore = create((set, get) => ({
           isInitialized: true,
         });
       } else {
+        clearAuthTokens();
         set({ isInitialized: true, isAuthenticated: false });
       }
     } catch (err) {
+      clearAuthTokens();
       set({ isInitialized: true, isAuthenticated: false });
     }
   },
@@ -49,6 +53,7 @@ export const useAuthStore = create((set, get) => ({
     const refreshToken = authData?.refreshToken;
     const user = authData?.user;
 
+    setAuthTokens(token);
     await secureStorage.saveTokens(token, refreshToken);
     await secureStorage.saveUser(user);
 
@@ -58,6 +63,9 @@ export const useAuthStore = create((set, get) => ({
       user,
       isAuthenticated: true,
     });
+
+    // Invalidate cached competition and profile data so fresh state is fetched
+    queryClient.clear();
 
     return user;
   },
@@ -77,6 +85,7 @@ export const useAuthStore = create((set, get) => ({
     const refreshToken = authData?.refreshToken;
     const user = authData?.user;
 
+    setAuthTokens(token);
     await secureStorage.saveTokens(token, refreshToken);
     await secureStorage.saveUser(user);
 
@@ -86,6 +95,9 @@ export const useAuthStore = create((set, get) => ({
       user,
       isAuthenticated: true,
     });
+
+    // Clear all previous queries to ensure no stale registered status lingers
+    queryClient.clear();
 
     return user;
   },
@@ -98,6 +110,7 @@ export const useAuthStore = create((set, get) => ({
         await apiClient.post('/auth/logout', { refreshToken: refresh }).catch(() => {});
       }
     } finally {
+      clearAuthTokens();
       await secureStorage.clearAll();
       set({
         user: null,
@@ -105,6 +118,8 @@ export const useAuthStore = create((set, get) => ({
         refreshToken: null,
         isAuthenticated: false,
       });
+      // Invalidate queries so anonymous state is restored cleanly
+      queryClient.clear();
     }
   },
 }));

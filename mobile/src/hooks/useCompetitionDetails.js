@@ -1,14 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchCompetitionDetails } from '../api/competition.api';
 import apiClient from '../api/client';
+import useAuthStore from '../store/authStore';
 
 /**
  * useCompetitionDetails Hook
  * Fetches complete competition details and calculated currentUserState using TanStack Query
  */
 export const useCompetitionDetails = (idOrSlug) => {
+  const user = useAuthStore((state) => state.user);
+  const userId = user?.id || user?._id || 'anon';
+
   return useQuery({
-    queryKey: ['competition', idOrSlug],
+    queryKey: ['competition', idOrSlug, userId],
     queryFn: async () => {
       const response = await fetchCompetitionDetails(idOrSlug);
       return response.data || response;

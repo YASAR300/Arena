@@ -21,34 +21,15 @@ const BottomActionBar = ({
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
 
-  const ctaAction = currentUserState.ctaAction || 'UPLOAD_SUBMISSION';
-  const ctaLabel = currentUserState.ctaLabel;
+  const isRegistered = Boolean(currentUserState?.isRegistered);
+  const ctaAction = currentUserState?.ctaAction;
+  const ctaLabel = currentUserState?.ctaLabel;
 
-  // Determine button presentation based on ctaAction
+  // Determine button presentation based on registration status & ctaAction
   const getButtonConfig = () => {
-    switch (ctaAction) {
-      case 'UPLOAD_SUBMISSION':
-        return {
-          title: t('uploadSubmission'),
-          subtitle: t('registered'),
-          disabled: false,
-          bgColor: THEME.colors.brandDarkTeal,
-          textColor: '#FFFFFF',
-          action: 'UPLOAD_SUBMISSION',
-        };
-
-      case 'REGISTER':
-      case 'LOGIN_REQUIRED':
-        return {
-          title: t('registerNow'),
-          subtitle: `₹ ${entryFee} ${t('entryFee')}`,
-          disabled: false,
-          bgColor: THEME.colors.brandDarkTeal,
-          textColor: '#FFFFFF',
-          action: 'REGISTER',
-        };
-
-      case 'SPOTS_FULL':
+    // 1. If user is NOT registered: they must see Register Now (or spots full / registration closed)
+    if (!isRegistered) {
+      if (ctaAction === 'SPOTS_FULL') {
         return {
           title: t('spotsFull'),
           subtitle: null,
@@ -57,8 +38,8 @@ const BottomActionBar = ({
           textColor: '#FFFFFF',
           action: 'SPOTS_FULL',
         };
-
-      case 'REGISTRATION_CLOSED':
+      }
+      if (ctaAction === 'REGISTRATION_CLOSED') {
         return {
           title: t('registrationClosed'),
           subtitle: null,
@@ -67,17 +48,41 @@ const BottomActionBar = ({
           textColor: '#FFFFFF',
           action: 'REGISTRATION_CLOSED',
         };
-
-      case 'REGISTERED_WAITING_SUBMISSION':
+      }
+      if (ctaAction === 'VIEW_RESULTS' || ctaAction === 'RESULTS_DECLARED') {
         return {
-          title: t('registered'),
-          subtitle: 'Submissions opening soon',
-          disabled: true,
-          bgColor: '#005F60',
+          title: t('viewResults'),
+          subtitle: null,
+          disabled: false,
+          bgColor: THEME.colors.brandDarkTeal,
           textColor: '#FFFFFF',
-          action: 'REGISTERED_WAITING_SUBMISSION',
+          action: 'VIEW_RESULTS',
         };
+      }
+      if (ctaAction === 'UPCOMING') {
+        return {
+          title: 'Coming Soon',
+          subtitle: null,
+          disabled: true,
+          bgColor: '#94A3B8',
+          textColor: '#FFFFFF',
+          action: 'UPCOMING',
+        };
+      }
 
+      // Default for non-registered user: Always Register Now!
+      return {
+        title: t('registerNow'),
+        subtitle: `₹ ${entryFee} ${t('entryFee')}`,
+        disabled: false,
+        bgColor: THEME.colors.brandDarkTeal,
+        textColor: '#FFFFFF',
+        action: 'REGISTER',
+      };
+    }
+
+    // 2. If user IS confirmed registered:
+    switch (ctaAction) {
       case 'SUBMISSION_UPLOADED':
         return {
           title: t('submissionUploaded'),
@@ -86,6 +91,17 @@ const BottomActionBar = ({
           bgColor: THEME.colors.brandDarkTeal,
           textColor: '#FFFFFF',
           action: 'SUBMISSION_UPLOADED',
+        };
+
+      case 'REGISTERED_WAITING_SUBMISSION':
+      case 'REGISTERED':
+        return {
+          title: t('registered'),
+          subtitle: 'Submissions opening soon',
+          disabled: true,
+          bgColor: '#005F60',
+          textColor: '#FFFFFF',
+          action: 'REGISTERED_WAITING_SUBMISSION',
         };
 
       case 'RESULTS_PENDING':
@@ -108,14 +124,15 @@ const BottomActionBar = ({
           action: 'VIEW_RESULTS',
         };
 
+      case 'UPLOAD_SUBMISSION':
       default:
         return {
-          title: ctaLabel || t('uploadSubmission'),
+          title: t('uploadSubmission'),
           subtitle: t('registered'),
           disabled: false,
           bgColor: THEME.colors.brandDarkTeal,
           textColor: '#FFFFFF',
-          action: ctaAction,
+          action: 'UPLOAD_SUBMISSION',
         };
     }
   };
