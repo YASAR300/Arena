@@ -53,8 +53,6 @@ const RegistrationSheet = ({
     }
   }, [initialReferralCode]);
 
-  if (!visible) return null;
-
   const baseFee = competition?.entryFee ?? 99;
   const finalPayable = Math.max(0, baseFee - discountAmount);
 
