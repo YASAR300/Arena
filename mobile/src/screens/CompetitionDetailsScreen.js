@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../constants/theme';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ROUTES } from '../navigation/routes';
+import notificationService from '../services/notificationService';
 import { useCompetitionDetails, useRegistrationMutation, useSubmissionMutation } from '../hooks/useCompetitionDetails';
 import ScreenHeader from '../components/competitionDetails/ScreenHeader';
 import CompetitionHeaderCard from '../components/competitionDetails/CompetitionHeaderCard';
@@ -55,6 +56,13 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
   const referralCode = route.params?.ref || route.params?.referralCode || '';
 
   const [activeBottomNav, setActiveBottomNav] = useState('competitions');
+
+  // Schedule deadline reminders (1 hr before registration ends, submission opening)
+  useEffect(() => {
+    if (competition) {
+      notificationService.scheduleCompetitionReminders(competition);
+    }
+  }, [competition]);
 
   // Handle CTA Actions from BottomActionBar state machine
   const handleCtaAction = async (action) => {
