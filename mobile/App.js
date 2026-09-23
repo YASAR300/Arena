@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import AppNavigator from './src/navigation/AppNavigator';
 import { LanguageProvider } from './src/i18n/LanguageContext';
-
+import { linking } from './src/navigation/linking';
 import { registerRootComponent } from 'expo';
 
 // Configure TanStack Query Client for competition polling & caching
@@ -24,7 +24,7 @@ function App() {
     <SafeAreaProvider>
       <LanguageProvider>
         <QueryClientProvider client={queryClient}>
-          <NavigationContainer>
+          <NavigationContainer linking={linking}>
             <StatusBar style="dark" />
             <AppNavigator />
           </NavigationContainer>
