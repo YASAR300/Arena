@@ -18,6 +18,8 @@ import { useLanguage } from '../i18n/LanguageContext';
 import apiClient from '../api/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useThrottledCallback } from '../utils/debounce';
+import { ROUTES } from '../navigation/routes';
+import BottomTabBar from '../components/competitionDetails/BottomTabBar';
 
 /**
  * SubmissionUploadScreen
@@ -185,7 +187,13 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate(ROUTES.COMPETITION_DETAILS);
+            }
+          }}
           style={styles.backButton}
           activeOpacity={0.7}
         >
@@ -388,6 +396,29 @@ export default function SubmissionUploadScreen({ route, navigation }) {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Persistent Bottom Tab Bar */}
+      <BottomTabBar
+        activeTab="create"
+        onTabPress={(tab) => {
+          switch (tab) {
+            case 'home':
+              navigation.navigate(ROUTES.HOME);
+              break;
+            case 'explore':
+              navigation.navigate(ROUTES.EXPLORE);
+              break;
+            case 'create':
+              break;
+            case 'competitions':
+              navigation.navigate(ROUTES.COMPETITION_DETAILS);
+              break;
+            case 'profile':
+              navigation.navigate(ROUTES.PROFILE);
+              break;
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }

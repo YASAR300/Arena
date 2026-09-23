@@ -3,12 +3,17 @@ import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Feather, Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { THEME } from '../../constants/theme';
 
+import useAuthStore from '../../store/authStore';
+
 /**
  * BottomTabBar Component
  * Replicates the fixed bottom application navigation bar from Objective_Page.png
  * Items: Home, Explore, + (Create), Competitions (Active), Profile
  */
 const BottomTabBar = ({ activeTab = 'competitions', onTabPress }) => {
+  const { user } = useAuthStore();
+  const initial = (user?.name || user?.email || 'U')[0].toUpperCase();
+
   return (
     <View style={styles.container}>
       {/* Home */}
@@ -89,12 +94,9 @@ const BottomTabBar = ({ activeTab = 'competitions', onTabPress }) => {
         onPress={() => onTabPress && onTabPress('profile')}
         activeOpacity={0.7}
       >
-        <Image
-          source={{
-            uri: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
-          }}
-          style={styles.profileAvatar}
-        />
+        <View style={[styles.profileAvatar, activeTab === 'profile' && styles.activeProfileAvatar]}>
+          <Text style={styles.profileAvatarText}>{initial}</Text>
+        </View>
         <Text
           style={[
             styles.tabLabel,
@@ -152,7 +154,18 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#CBD5E1',
+    backgroundColor: '#005F60',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeProfileAvatar: {
+    borderWidth: 1.5,
+    borderColor: THEME.colors.brandTeal,
+  },
+  profileAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
 });
 

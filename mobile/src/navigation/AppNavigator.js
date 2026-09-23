@@ -5,6 +5,8 @@ import { ROUTES } from './routes';
 import HomeScreen from '../screens/HomeScreen';
 import CompetitionDetailsScreen from '../screens/CompetitionDetailsScreen';
 import SubmissionUploadScreen from '../screens/SubmissionUploadScreen';
+import ExploreScreen from '../screens/ExploreScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
 import useAuthStore from '../store/authStore';
@@ -53,6 +55,8 @@ export default function AppNavigator() {
             component={SubmissionUploadScreen}
           />
           <Stack.Screen name={ROUTES.HOME} component={HomeScreen} />
+          <Stack.Screen name={ROUTES.EXPLORE} component={ExploreScreen} />
+          <Stack.Screen name={ROUTES.PROFILE} component={ProfileScreen} />
         </Stack.Group>
       )}
     </Stack.Navigator>

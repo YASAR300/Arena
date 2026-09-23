@@ -119,9 +119,9 @@ const seedData = async () => {
         spotsBooked: 1, // Exactly 19 spots left!
         registrationStartAt: new Date(now - 3 * 24 * 3600 * 1000),
         registrationEndAt: regEnd,
-        submissionStartAt: new Date('2026-08-06T04:00:00.000Z'),
-        submissionEndAt: new Date('2026-08-30T23:55:00.000Z'),
-        resultDate: new Date('2026-09-01T23:50:00.000Z'),
+        submissionStartAt: new Date(now - 2 * 3600 * 1000), // opened 2 hours ago
+        submissionEndAt: new Date(now + 7 * 24 * 3600 * 1000), // closes in 7 days
+        resultDate: new Date(now + 10 * 24 * 3600 * 1000), // results in 10 days
         status: 'REGISTRATION_OPEN',
         judge: judge._id,
         previousWinners: previousWinnerDocs,

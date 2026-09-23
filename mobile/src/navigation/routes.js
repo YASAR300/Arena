@@ -5,6 +5,8 @@ export const ROUTES = {
   HOME: 'Home',
   COMPETITION_DETAILS: 'CompetitionDetails',
   SUBMISSION_UPLOAD: 'SubmissionUpload',
+  EXPLORE: 'Explore',
+  PROFILE: 'Profile',
   LOGIN: 'Login',
   SIGNUP: 'Signup',
 };

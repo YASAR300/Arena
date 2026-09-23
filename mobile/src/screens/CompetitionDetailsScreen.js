@@ -111,7 +111,13 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
     <SafeAreaView style={styles.safeArea}>
       {/* 1. Screen Header with Back, Auth, & Language Switcher */}
       <ScreenHeader
-        onBack={() => navigation.canGoBack() ? navigation.goBack() : null}
+        onBack={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.navigate(ROUTES.HOME);
+          }
+        }}
         navigation={navigation}
       />
 
@@ -211,7 +217,25 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
       {/* 15. Persistent App Bottom Navigation Bar */}
       <BottomTabBar
         activeTab={activeBottomNav}
-        onTabPress={(tab) => setActiveBottomNav(tab)}
+        onTabPress={(tab) => {
+          setActiveBottomNav(tab);
+          switch (tab) {
+            case 'home':
+              navigation.navigate(ROUTES.HOME);
+              break;
+            case 'explore':
+              navigation.navigate(ROUTES.EXPLORE);
+              break;
+            case 'create':
+              navigation.navigate(ROUTES.SUBMISSION_UPLOAD, { competition });
+              break;
+            case 'competitions':
+              break;
+            case 'profile':
+              navigation.navigate(ROUTES.PROFILE);
+              break;
+          }
+        }}
       />
 
       {/* 16. Registration & Razorpay Payment Bottom Sheet */}
