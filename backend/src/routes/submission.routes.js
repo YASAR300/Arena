@@ -6,6 +6,7 @@ const { validate, submissionSchema } = require('../middlewares/validate.middlewa
 
 router.get('/signed-url', protect, getSignedUploadUrl);
 router.post('/', protect, validate(submissionSchema), createSubmission);
+router.put('/', protect, validate(submissionSchema), createSubmission);
 router.get('/me', protect, getMySubmission);
 
 module.exports = router;

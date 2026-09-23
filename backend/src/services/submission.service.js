@@ -79,10 +79,15 @@ const createSubmission = async ({ competitionId, userId, mediaUrl, mediaType, th
     throw ApiError.forbidden('You must have a confirmed registration to submit');
   }
 
-  // 1 submission per user enforced by schema unique index on registrationId
+  // Allow edit/replace before deadline: if already submitted, update mediaUrl
   const existing = await Submission.findOne({ registrationId: registration._id });
   if (existing) {
-    throw ApiError.conflict('You have already submitted an entry for this competition');
+    existing.mediaUrl = mediaUrl;
+    existing.mediaType = mediaType;
+    if (thumbnailUrl) existing.thumbnailUrl = thumbnailUrl;
+    existing.submittedAt = new Date();
+    await existing.save();
+    return existing;
   }
 
   const submission = await Submission.create({

@@ -51,13 +51,13 @@ exports.verifyPaymentSchema = Joi.object({
 // ── Submission ────────────────────────────────────────────────────────
 exports.submissionSchema = Joi.object({
   mediaUrl: Joi.string().uri().required(),
-  mediaType: Joi.string().valid('video/mp4', 'video/quicktime', 'url').required(),
-  thumbnailUrl: Joi.string().uri().optional(),
+  mediaType: Joi.string().valid('video/mp4', 'video/quicktime', 'image/jpeg', 'image/png', 'url').required(),
+  thumbnailUrl: Joi.string().uri().optional().allow(''),
 });
 
 exports.signedUrlSchema = Joi.object({
   fileName: Joi.string().required(),
-  fileType: Joi.string().valid('video/mp4', 'video/quicktime').required(),
+  fileType: Joi.string().valid('video/mp4', 'video/quicktime', 'image/jpeg', 'image/png').required(),
   competitionId: Joi.string().hex().length(24).required(),
 });
 
