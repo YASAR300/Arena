@@ -39,7 +39,7 @@ exports.competitionIdParamSchema = Joi.object({
 
 // ── Registration ──────────────────────────────────────────────────────
 exports.initiatePaymentSchema = Joi.object({
-  competitionId: Joi.string().hex().length(24).required(),
+  referralCode: Joi.string().trim().uppercase().max(20).optional().allow(''),
 });
 
 exports.verifyPaymentSchema = Joi.object({

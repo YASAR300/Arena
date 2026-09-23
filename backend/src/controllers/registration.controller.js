@@ -10,8 +10,9 @@ const registrationService = require('../services/registration.service');
 const initiatePayment = asyncHandler(async (req, res) => {
   const { id: competitionId } = req.params;
   const userId = req.user._id;
+  const { referralCode } = req.body || {};
 
-  const result = await registrationService.initiatePaymentForRegistration(competitionId, userId);
+  const result = await registrationService.initiatePaymentForRegistration(competitionId, userId, referralCode);
   return ApiResponse.created(res, result, 'Payment order created. Complete payment to confirm registration.');
 });
 

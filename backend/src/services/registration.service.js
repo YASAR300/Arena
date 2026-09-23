@@ -49,7 +49,7 @@ const ApiError = require('../utils/apiError');
  * Step 1: Initiate payment order — called before registration is confirmed.
  * Returns an order object for the client to open Razorpay checkout.
  */
-const initiatePaymentForRegistration = async (competitionId, userId) => {
+const initiatePaymentForRegistration = async (competitionId, userId, referralCode) => {
   const competition = await Competition.findById(competitionId);
   if (!competition || !competition.isActive) {
     throw ApiError.notFound('Competition not found');
@@ -69,26 +69,44 @@ const initiatePaymentForRegistration = async (competitionId, userId) => {
     throw ApiError.conflict('You are already registered for this competition');
   }
 
-  // Create payment order (mock)
+  // Calculate discount if referral code applied (e.g. ₹10 off)
+  let entryFee = competition.entryFee;
+  let discountApplied = 0;
+  if (referralCode && typeof referralCode === 'string' && referralCode.trim().length > 0) {
+    discountApplied = Math.min(entryFee, 10);
+    entryFee = Math.max(0, entryFee - discountApplied);
+  }
+
+  // Create payment order (mock/real Razorpay)
   const order = await paymentService.createOrder({
-    amount: competition.entryFee * 100, // Razorpay expects paise
+    amount: entryFee * 100, // Razorpay expects paise
     currency: competition.currency,
     receipt: `reg_${competitionId}_${userId}`,
-    notes: { competitionId: String(competitionId), userId: String(userId) },
+    notes: {
+      competitionId: String(competitionId),
+      userId: String(userId),
+      referralCode: referralCode || '',
+      discountApplied: String(discountApplied),
+    },
   });
 
   // Persist payment record
   const payment = await Payment.create({
     userId,
     competitionId,
-    amount: competition.entryFee,
+    amount: entryFee,
     currency: competition.currency,
     provider: 'razorpay',
     providerOrderId: order.id,
     status: 'CREATED',
   });
 
-  return { order, paymentId: payment._id };
+  return {
+    order,
+    paymentId: payment._id,
+    discountApplied,
+    finalAmount: entryFee,
+  };
 };
 
 /**

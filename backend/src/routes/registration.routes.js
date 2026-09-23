@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router({ mergeParams: true });
 const { protect } = require('../middlewares/auth.middleware');
 const { initiatePayment, confirmRegistration, cancelRegistration } = require('../controllers/registration.controller');
-const { validate, verifyPaymentSchema } = require('../middlewares/validate.middleware');
+const { validate, initiatePaymentSchema, verifyPaymentSchema } = require('../middlewares/validate.middleware');
 const rateLimit = require('express-rate-limit');
 
 /**
@@ -28,7 +28,7 @@ const registrationLimiter = rateLimit({
  *     security:
  *       - BearerAuth: []
  */
-router.post('/initiate-payment', protect, registrationLimiter, initiatePayment);
+router.post('/initiate-payment', protect, registrationLimiter, validate(initiatePaymentSchema), initiatePayment);
 
 /**
  * @swagger
