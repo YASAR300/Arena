@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLanguage } from '../../i18n/LanguageContext';
@@ -197,4 +197,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default BottomActionBar;
+export default memo(BottomActionBar);

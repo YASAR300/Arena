@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   ScrollView,
@@ -16,6 +16,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { ROUTES } from '../navigation/routes';
 import notificationService from '../services/notificationService';
 import { useCompetitionDetails, useRegistrationMutation, useSubmissionMutation } from '../hooks/useCompetitionDetails';
+import ErrorBoundary from '../components/common/ErrorBoundary';
 import ScreenHeader from '../components/competitionDetails/ScreenHeader';
 import CompetitionHeaderCard from '../components/competitionDetails/CompetitionHeaderCard';
 import JudgeCard from '../components/competitionDetails/JudgeCard';
@@ -72,8 +73,8 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
     }
   }, [competition]);
 
-  // Handle CTA Actions from BottomActionBar state machine
-  const handleCtaAction = async (action) => {
+  // Handle CTA Actions from BottomActionBar state machine (memoized callback)
+  const handleCtaAction = useCallback((action) => {
     switch (action) {
       case 'REGISTER':
       case 'LOGIN_REQUIRED':
@@ -105,7 +106,7 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
       default:
         break;
     }
-  };
+  }, [competition, navigation, t]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -152,13 +153,17 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
           }
         >
           {/* 2. Competition Header Card (Title, Tags, Certificate, Spots Progress) */}
-          <CompetitionHeaderCard
-            competition={competition}
-            currentUserState={competition?.currentUserState}
-          />
+          <ErrorBoundary title="Header Card Error">
+            <CompetitionHeaderCard
+              competition={competition}
+              currentUserState={competition?.currentUserState}
+            />
+          </ErrorBoundary>
 
           {/* 3. Judge Card (Avatar, Credentials, Intro Video Player) */}
-          <JudgeCard judge={competition?.judge} />
+          <ErrorBoundary title="Judge Card Error">
+            <JudgeCard judge={competition?.judge} />
+          </ErrorBoundary>
 
           {/* 4. Live Countdown Banner */}
           <CountdownBanner
@@ -171,13 +176,17 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
           <ImportantDatesGrid dates={competition} />
 
           {/* 6. Previous Winners Carousel */}
-          <PreviousWinnersCarousel winners={competition?.previousWinners} />
+          <ErrorBoundary title="Winners Carousel Error">
+            <PreviousWinnersCarousel winners={competition?.previousWinners} />
+          </ErrorBoundary>
 
           {/* 7. Tabs Section (About / Judging / Rules + View more/less) */}
           <TabsSection competition={competition} />
 
           {/* 8. Rewards Table */}
-          <RewardsTable rewards={competition?.rewards} />
+          <ErrorBoundary title="Rewards Table Error">
+            <RewardsTable rewards={competition?.rewards} />
+          </ErrorBoundary>
 
           {/* 9. Disclaimer Banner */}
           <DisclaimerBanner />
@@ -189,10 +198,12 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
           />
 
           {/* 11. Refer & Earn Card with Working Copy & Native Share */}
-          <ReferAndEarnCard
-            referralCode={competition?.currentUserState?.referralCode}
-            referralUrl={competition?.currentUserState?.referralUrl}
-          />
+          <ErrorBoundary title="Referral Card Error">
+            <ReferAndEarnCard
+              referralCode={competition?.currentUserState?.referralCode}
+              referralUrl={competition?.currentUserState?.referralUrl}
+            />
+          </ErrorBoundary>
 
           {/* 12. Hear From Our Users Row */}
           <ReviewsEntryRow />

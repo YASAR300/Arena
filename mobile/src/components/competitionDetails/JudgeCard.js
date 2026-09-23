@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, memo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { THEME } from '../../constants/theme';
@@ -19,11 +20,13 @@ const JudgeCard = ({ judge }) => {
   return (
     <>
       <View style={styles.card}>
-        {/* Judge Avatar */}
+        {/* Judge Avatar — Cached via expo-image */}
         <Image
           source={{ uri: photoUrl }}
           style={styles.avatar}
-          defaultSource={{ uri: fallbackPhoto }}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={200}
         />
 
         {/* Judge Bio & Details */}
@@ -133,4 +136,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default JudgeCard;
+export default memo(JudgeCard);

@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import {
   View,
   Text,
-  Image,
   FlatList,
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { THEME } from '../../constants/theme';
@@ -69,7 +69,13 @@ const PreviousWinnersCarousel = ({ winners = [] }) => {
         }
         activeOpacity={0.8}
       >
-        <Image source={{ uri: item.thumbnailUrl }} style={styles.thumbnail} />
+        <Image
+          source={{ uri: item.thumbnailUrl }}
+          style={styles.thumbnail}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={150}
+        />
         <View style={styles.playOverlay}>
           <View style={styles.playCircle}>
             <Ionicons name="play" size={14} color={THEME.colors.brandTeal} style={{ marginLeft: 2 }} />
@@ -187,4 +193,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default PreviousWinnersCarousel;
+export default memo(PreviousWinnersCarousel);

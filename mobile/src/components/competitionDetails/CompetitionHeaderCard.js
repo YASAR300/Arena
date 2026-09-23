@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { THEME } from '../../constants/theme';
-import useCompetitionSpots from '../../hooks/useCompetitionSpots';
+import LiveSpotsTracker from './LiveSpotsTracker';
 
 /**
  * CompetitionHeaderCard Component
@@ -12,16 +12,13 @@ import useCompetitionSpots from '../../hooks/useCompetitionSpots';
 const CompetitionHeaderCard = ({ competition, currentUserState }) => {
   const { t } = useLanguage();
 
-  const spots = useCompetitionSpots(competition?._id, {
+  const isRegistered = currentUserState?.isRegistered;
+
+  const initialSpots = {
     totalSpots: competition?.totalSpots || 20,
     spotsBooked: competition?.spotsBooked || 0,
     spotsLeft: competition?.spotsLeft ?? (competition?.totalSpots ? competition.totalSpots - competition.spotsBooked : 19),
-  });
-
-  const isRegistered = currentUserState?.isRegistered;
-  const progressRatio = spots.totalSpots > 0 
-    ? Math.min(1, Math.max(0, spots.spotsBooked / spots.totalSpots))
-    : 0;
+  };
 
   return (
     <View style={styles.card}>
@@ -71,24 +68,11 @@ const CompetitionHeaderCard = ({ competition, currentUserState }) => {
           <Text style={styles.entryFeeValue}>₹ {competition?.entryFee ?? '99'}</Text>
         </View>
 
-        {/* Spots Left Progress */}
-        <View style={styles.spotsTracker}>
-          <View style={styles.spotsHeader}>
-            <Ionicons name="people" size={13} color={THEME.colors.brandTeal} />
-            <Text style={styles.spotsCountText}>
-              {t('onlySpotsLeft', { count: spots.spotsLeft })}
-            </Text>
-          </View>
-
-          {/* Progress Track */}
-          <View style={styles.progressBarTrack}>
-            <View style={[styles.progressBarFill, { width: `${Math.max(5, progressRatio * 100)}%` }]} />
-          </View>
-
-          <Text style={styles.bookedText}>
-            {t('bookedRatio', { booked: spots.spotsBooked, total: spots.totalSpots })}
-          </Text>
-        </View>
+        {/* Live Spots Tracker — isolated re-render zone */}
+        <LiveSpotsTracker
+          competitionId={competition?._id}
+          initialSpots={initialSpots}
+        />
       </View>
     </View>
   );
@@ -232,4 +216,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CompetitionHeaderCard;
+export default memo(CompetitionHeaderCard);
