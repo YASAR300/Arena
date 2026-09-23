@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
-import { secureStorage } from '../store/authStore';
+import secureStorage from '../store/secureStorage';
 import { navigateToLoginWithReturn } from '../navigation/navigationRef';
 
 /**
