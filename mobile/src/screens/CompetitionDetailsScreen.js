@@ -30,6 +30,7 @@ import AdPlaceholder from '../components/competitionDetails/AdPlaceholder';
 import BottomActionBar from '../components/competitionDetails/BottomActionBar';
 import BottomTabBar from '../components/competitionDetails/BottomTabBar';
 import CompetitionDetailsSkeleton from '../components/common/SkeletonPlaceholder';
+import RegistrationSheet from '../components/registration/RegistrationSheet';
 
 /**
  * CompetitionDetailsScreen Master Screen
@@ -49,7 +50,8 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
   } = useCompetitionDetails(competitionSlug);
 
   const registrationMutation = useRegistrationMutation(competition?._id);
-  const submissionMutation = useSubmissionMutation(competition?._id);
+  const [isRegistrationSheetVisible, setIsRegistrationSheetVisible] = useState(false);
+  const referralCode = route.params?.ref || route.params?.referralCode || '';
 
   const [activeBottomNav, setActiveBottomNav] = useState('competitions');
 
@@ -57,24 +59,7 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
   const handleCtaAction = async (action) => {
     switch (action) {
       case 'REGISTER':
-        Alert.alert(
-          t('registerNow'),
-          `Proceed with ₹${competition?.entryFee || 99} entry fee payment via Razorpay?`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Pay & Register',
-              onPress: async () => {
-                try {
-                  await registrationMutation.mutateAsync();
-                  Alert.alert('Success 🎉', 'Registration confirmed! Your spot has been booked.');
-                } catch (err) {
-                  Alert.alert('Registration Failed', err.message || 'Could not complete registration.');
-                }
-              },
-            },
-          ]
-        );
+        setIsRegistrationSheetVisible(true);
         break;
 
       case 'UPLOAD_SUBMISSION':
@@ -243,6 +228,21 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
       <BottomTabBar
         activeTab={activeBottomNav}
         onTabPress={(tab) => setActiveBottomNav(tab)}
+      />
+
+      {/* 16. Registration & Razorpay Payment Bottom Sheet */}
+      <RegistrationSheet
+        visible={isRegistrationSheetVisible}
+        onClose={() => setIsRegistrationSheetVisible(false)}
+        competition={competition}
+        initialReferralCode={referralCode}
+        onRegistrationSuccess={(_data) => {
+          refetch();
+          Alert.alert(
+            'Registration Confirmed! 🎉',
+            'Your spot has been secured. You can now prepare your entry and upload it when submissions open!'
+          );
+        }}
       />
     </SafeAreaView>
   );
