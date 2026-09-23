@@ -6,6 +6,8 @@ import { StatusBar } from 'expo-status-bar';
 import AppNavigator from './src/navigation/AppNavigator';
 import { LanguageProvider } from './src/i18n/LanguageContext';
 
+import { registerRootComponent } from 'expo';
+
 // Configure TanStack Query Client for competition polling & caching
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,7 +19,7 @@ const queryClient = new QueryClient({
   },
 });
 
-export default function App() {
+function App() {
   return (
     <SafeAreaProvider>
       <LanguageProvider>
@@ -31,3 +33,7 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+registerRootComponent(App);
+
+export default App;
