@@ -9,7 +9,7 @@ import {
   SafeAreaView,
   Dimensions,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../../constants/theme';
 
@@ -20,7 +20,25 @@ const { width, height } = Dimensions.get('window');
  * Reusable modal video player for judge intro videos and winner highlight reels
  */
 const VideoPlayerModal = ({ visible, videoUrl, title, onClose }) => {
-  const [isLoading, setIsLoading] = React.useState(true);
+  const defaultUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  const source = videoUrl || defaultUrl;
+
+  const player = useVideoPlayer(source, (p) => {
+    p.loop = true;
+    if (visible) {
+      p.play();
+    }
+  });
+
+  React.useEffect(() => {
+    if (player) {
+      if (visible) {
+        player.play();
+      } else {
+        player.pause();
+      }
+    }
+  }, [visible, player]);
 
   if (!visible) return null;
 
@@ -45,31 +63,12 @@ const VideoPlayerModal = ({ visible, videoUrl, title, onClose }) => {
 
         {/* Video Canvas */}
         <View style={styles.videoWrapper}>
-          {isLoading && (
-            <View style={styles.loaderOverlay}>
-              <ActivityIndicator size="large" color={THEME.colors.brandTeal} />
-            </View>
-          )}
-
-          <Video
-            source={{
-              uri:
-                videoUrl ||
-                'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-            }}
-            rate={1.0}
-            volume={1.0}
-            isMuted={false}
-            resizeMode={ResizeMode.CONTAIN}
-            shouldPlay
-            useNativeControls
+          <VideoView
             style={styles.video}
-            onLoadStart={() => setIsLoading(true)}
-            onLoad={() => setIsLoading(false)}
-            onError={(err) => {
-              console.warn('[VideoPlayerModal] Error playing video:', err);
-              setIsLoading(false);
-            }}
+            player={player}
+            allowsFullscreen
+            allowsPictureInPicture
+            contentFit="contain"
           />
         </View>
       </SafeAreaView>
