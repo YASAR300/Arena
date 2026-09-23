@@ -4,11 +4,11 @@ import {
   ScrollView,
   RefreshControl,
   StyleSheet,
-  SafeAreaView,
   Text,
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../constants/theme';
@@ -191,7 +191,7 @@ export default function CompetitionDetailsScreen({ route, navigation }) {
         <BottomActionBar
           currentUserState={competition?.currentUserState}
           entryFee={competition?.entryFee}
-          loading={registrationMutation.isPending || submissionMutation.isPending}
+          loading={registrationMutation.isPending}
           onPressAction={handleCtaAction}
         />
       )}
