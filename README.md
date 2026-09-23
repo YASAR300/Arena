@@ -191,17 +191,62 @@ npm start
 # Scan QR code with Expo Go app or press 'a' for Android, 'i' for iOS
 ```
 
----
+## Frontend User Journeys & Architecture
 
-## Future Improvements
+### 1. Registration + Payment Flow (Razorpay)
+- **Bottom Sheet Modal (`RegistrationSheet.js`)**:
+  - Displays entry fee breakdown: Base Fee, Referral Discount (if code applied via deep link or manual entry), Total Payable.
+  - Razorpay checkout integration with Test Mode key support.
+  - Full flow: Frontend requests order from backend → Backend generates order id → Frontend opens Razorpay Checkout → On success, sends `razorpay_order_id`, `razorpay_payment_id`, and `razorpay_signature` to backend → Backend verifies HMAC-SHA256 signature server-side → Backend atomically books the spot via MongoDB transaction → Frontend updates cache and `BottomActionBar` switches to "Registered".
+- **Race Condition & Auto-Refund Handling**:
+  - If another user snatches the last spot while the current user was on the checkout screen, the backend's atomic condition `spotsBooked: { $lt: totalSpots }` fails.
+  - The backend catches this, automatically triggers an automatic refund stub via Razorpay (`paymentService.initiateRefund`), updates payment status to `REFUNDED`, and returns a clear `SPOTS_FILLED` error.
+  - The mobile frontend immediately displays a clear explanation with refund details (100% refund, credit time).
 
-- [ ] Replace polling with pure WebSocket when mobile network quality allows
-- [ ] Add Redis caching layer for competition read-heavy endpoints
-- [ ] Implement CDN (CloudFront/Cloudflare) for video assets and judge photos
-- [ ] Turborepo for monorepo build pipeline optimization
-- [ ] Automated E2E tests with Detox (mobile) and Supertest (backend)
-- [ ] Sentry error monitoring integration for production observability
-- [ ] Push notifications via Expo Notifications for registration reminders and result announcements
+### 2. Deep Link & Referral Handling
+- **Supported Schemes**:
+  - Custom URI: `feedants://competitions/:slug?ref=CODE`
+  - Universal / App Links: `https://feedants.com/competitions/:slug?ref=CODE`
+- **Behavior**:
+  - React Navigation parses the `ref` query parameter and auto-applies the referral code inside `RegistrationSheet.js`.
+- **Web Fallback (Production Architecture)**:
+  - If the app is not installed, the universal HTTPS link opens a mobile web landing page.
+  - The landing page presents competition details and routes the user to Google Play / App Store with deferred deep linking (via Branch.io / Firebase Dynamic Links), preserving the referral attribution across app installation.
+
+### 3. Submission Upload & Edit Flow
+- **Media Picker & Preview (`SubmissionUploadScreen.js`)**:
+  - Uses `expo-image-picker` to select performance videos or photos.
+  - Displays preview, resolution, duration, and file metadata.
+- **Signed URL Upload Pattern**:
+  - Client requests a pre-signed URL from `GET /api/competitions/:id/submissions/signed-url`.
+  - Client uploads directly to cloud storage (S3/Cloudinary), tracking progress visually from 0% to 100%.
+  - On upload completion, client confirms the submission with `POST /api/competitions/:id/submissions`.
+- **Edit / Replace Before Deadline**:
+  - If a user has already submitted, they can replace their submission as long as the submission window is active (`now <= competition.submissionEndAt`). Both client and server strictly enforce this deadline.
+- **Urgent Deadline Warning**:
+  - If `< 1 hour` remains before submission deadline, an urgent amber/red countdown banner alerts the user.
+
+### 4. Authentication & Token Storage
+- **Screens**: `LoginScreen.js` and `SignupScreen.js` with form validation and password visibility toggle.
+- **Return-To-Screen Pattern**:
+  - If an unauthenticated user attempts to register or submit, they are redirected to login with `returnTo` and `returnParams`, automatically resuming their intended journey upon authentication.
+- **Token Storage Trade-off**:
+  - *Production Best Practice*: `react-native-keychain` or `expo-secure-store` utilizing hardware-backed Keystores (Android TEE / iOS Secure Enclave) for encrypted token storage at rest.
+  - *Trade-off Made*: Abstracted `secureStorage` adapter backed by `@react-native-async-storage/async-storage` for universal Expo Go execution without native compilation. Swapping to Keychain in production requires changing only the storage adapter.
+
+### 5. Edge Case UX & Resiliency
+- **Offline Detection Banner**: Real-time network detection via `@react-native-community/netinfo`. Shows an animated banner when offline, and flashes a green confirmation banner when connectivity resumes.
+- **Silent Token Refresh (401 Interceptor)**: Axios interceptor intercepts 401 Unauthorized responses, silently refreshes the JWT access token using the stored refresh token, queues and retries pending requests. If refresh fails, it redirects to login preserving the current destination.
+- **Double-Tap Debounce / Throttling**: Critical action buttons (`BottomActionBar`, `RegistrationSheet`, `SubmissionUploadScreen`) use leading-edge click throttling (`useThrottledCallback`) and in-flight disabled states to eliminate accidental double charges or duplicate submissions.
+
+### 6. Notifications Architecture
+- **Local Reminders (`notificationService.js`)**:
+  - Schedules notifications for:
+    1. "Registration closing in 1 hour"
+    2. "Submission window opening"
+- **Production Push Pipeline**:
+  - FCM / APNs integration where device tokens are registered on login.
+  - Backend event-driven workers (BullMQ + Redis) dispatch batch multicast pushes for deadline alerts and result announcements.
 
 ---
 
@@ -212,4 +257,15 @@ All commits follow [Conventional Commits](https://www.conventionalcommits.org/):
 feat|fix|chore|docs|refactor|test|perf(scope): message
 ```
 
-> In production, this monorepo might be split into separate repos or managed with Turborepo workspaces for independent deployments and CI pipelines.
+1. `feat(mobile): implement RegistrationSheet with Razorpay checkout integration`
+2. `feat(backend): add payment order creation and signature verification endpoints`
+3. `feat(mobile): handle registration race-condition and payment failure edge cases`
+4. `feat(mobile): add deep linking support for referral-based competition entry`
+5. `feat(mobile): implement SubmissionUploadScreen with progress and retry`
+6. `feat(backend): support submission edit/replace before deadline with validation`
+7. `feat(mobile): implement Login and Signup screens with secure token storage`
+8. `feat(mobile): add offline detection banner and network-aware UI states`
+9. `feat(mobile): implement silent token refresh and return-to-screen-after-login flow`
+10. `feat(mobile): add local notifications for registration/submission deadline reminders`
+11. `fix(mobile): debounce critical action buttons to prevent duplicate requests`
+
