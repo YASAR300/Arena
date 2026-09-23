@@ -131,7 +131,8 @@ export default function SubmissionUploadScreen({ route, navigation }) {
         }
       );
 
-      const { uploadUrl, key } = signedRes.data.data;
+      const signPayload = signedRes?.data || signedRes;
+      const { uploadUrl, key } = signPayload?.data || signPayload;
       setUploadProgress(35);
       setUploadStatusText('Uploading media directly to storage...');
 

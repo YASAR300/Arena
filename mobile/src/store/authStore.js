@@ -44,7 +44,10 @@ export const useAuthStore = create((set, get) => ({
       : { phone: identifier.trim(), password };
 
     const res = await apiClient.post('/auth/login', payload);
-    const { token, refreshToken, user } = res.data.data;
+    const authData = res?.data || res;
+    const token = authData?.accessToken || authData?.token;
+    const refreshToken = authData?.refreshToken;
+    const user = authData?.user;
 
     await secureStorage.saveTokens(token, refreshToken);
     await secureStorage.saveUser(user);
@@ -69,7 +72,10 @@ export const useAuthStore = create((set, get) => ({
     };
 
     const res = await apiClient.post('/auth/signup', payload);
-    const { token, refreshToken, user } = res.data.data;
+    const authData = res?.data || res;
+    const token = authData?.accessToken || authData?.token;
+    const refreshToken = authData?.refreshToken;
+    const user = authData?.user;
 
     await secureStorage.saveTokens(token, refreshToken);
     await secureStorage.saveUser(user);

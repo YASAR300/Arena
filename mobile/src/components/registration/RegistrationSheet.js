@@ -91,12 +91,14 @@ const RegistrationSheet = ({
 
     try {
       // Step 0: Ensure authenticated session exists
-      const authState = useAuthStore.getState();
-      if (!authState.isAuthenticated || !authState.accessToken) {
+      let currentToken = useAuthStore.getState().accessToken;
+      if (!currentToken) {
         try {
-          await authState.login('demo@feedants.com', 'password123');
+          await useAuthStore.getState().login('demo@feedants.com', 'password123');
+          currentToken = useAuthStore.getState().accessToken;
         } catch (loginErr) {
           console.warn('[RegistrationSheet] Auto-login with demo account failed:', loginErr);
+          throw new Error('Please log in to continue registration.');
         }
       }
 
@@ -106,7 +108,8 @@ const RegistrationSheet = ({
         { referralCode: appliedReferral || undefined }
       );
 
-      const orderData = initiateRes.data?.data?.order;
+      const resPayload = initiateRes?.data || initiateRes;
+      const orderData = resPayload?.order || resPayload?.data?.order || resPayload;
       if (!orderData || !orderData.id) {
         throw new Error('Unable to generate payment order. Please try again.');
       }
@@ -152,7 +155,7 @@ const RegistrationSheet = ({
         setIsPaying(false);
         onClose();
         if (onRegistrationSuccess) {
-          onRegistrationSuccess(confirmRes.data?.data);
+          onRegistrationSuccess(confirmRes?.data?.data || confirmRes?.data || confirmRes);
         }
       } catch (confirmErr) {
         setIsPaying(false);
