@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Image,
   ActivityIndicator,
   Alert,
   Platform,
@@ -19,18 +18,21 @@ import apiClient from '../api/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useThrottledCallback } from '../utils/debounce';
 import { ROUTES } from '../navigation/routes';
-import BottomTabBar from '../components/competitionDetails/BottomTabBar';
 
 /**
  * SubmissionUploadScreen
- * Complete upload flow: media picker, preview, signed-URL upload progress,
- * retry on failure, submission replacement/edit before deadline, and urgent countdown warning.
+ * Dedicated video upload flow for competition performances:
+ * - Strictly video files (MP4/MOV)
+ * - Immediate visible submit buttons both in-card and sticky footer
+ * - Safe fallback competition resolution
+ * - Signed Cloudinary direct upload
  */
 export default function SubmissionUploadScreen({ route, navigation }) {
   const { competition, existingSubmission } = route.params || {};
   const { t } = useLanguage();
   const queryClient = useQueryClient();
 
+  const [activeComp, setActiveComp] = useState(competition || null);
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0); // 0 to 100
@@ -40,12 +42,31 @@ export default function SubmissionUploadScreen({ route, navigation }) {
   const [timeLeftString, setTimeLeftString] = useState('');
   const [isWindowClosed, setIsWindowClosed] = useState(false);
 
+  // If competition wasn't passed, fetch the default active competition
+  useEffect(() => {
+    if (!activeComp) {
+      apiClient
+        .get('/competitions/feedants-classical-dance')
+        .then((res) => {
+          const compData = res?.data || res;
+          setActiveComp(compData);
+        })
+        .catch((err) =>
+          console.warn('[SubmissionUpload] Failed to fetch fallback competition:', err)
+        );
+    }
+  }, [activeComp]);
+
   // Check Submission Window Deadline
   useEffect(() => {
     const checkDeadline = () => {
-      if (!competition?.submissionEndAt) return;
+      const endAt = activeComp?.submissionEndAt;
+      if (!endAt) {
+        setTimeLeftString('Closes on Sep 30, 2026');
+        return;
+      }
       const now = new Date();
-      const end = new Date(competition.submissionEndAt);
+      const end = new Date(endAt);
       const diffMs = end - now;
 
       if (diffMs <= 0) {
@@ -54,7 +75,6 @@ export default function SubmissionUploadScreen({ route, navigation }) {
         return;
       }
 
-      // Check if less than 1 hour remains (< 3600000 ms)
       if (diffMs < 60 * 60 * 1000) {
         setIsUrgentDeadline(true);
       }
@@ -64,15 +84,17 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       const mins = Math.floor((totalSec % 3600) / 60);
       const secs = totalSec % 60;
 
-      setTimeLeftString(`${String(hours).padStart(2, '0')}h : ${String(mins).padStart(2, '0')}m : ${String(secs).padStart(2, '0')}s`);
+      setTimeLeftString(
+        `${String(hours).padStart(2, '0')}h : ${String(mins).padStart(2, '0')}m : ${String(secs).padStart(2, '0')}s`
+      );
     };
 
     checkDeadline();
     const timer = setInterval(checkDeadline, 1000);
     return () => clearInterval(timer);
-  }, [competition?.submissionEndAt]);
+  }, [activeComp?.submissionEndAt]);
 
-  // Pick Media (Video or Image)
+  // Pick Video ONLY (strictly performance video, no images)
   const handlePickMedia = async () => {
     if (isWindowClosed) {
       Alert.alert('Window Closed', 'Submissions can no longer be accepted for this competition.');
@@ -82,14 +104,17 @@ export default function SubmissionUploadScreen({ route, navigation }) {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Please enable media library access to pick your performance video or photo.');
+        Alert.alert(
+          'Permission Required',
+          'Please enable video library access to select your performance video.'
+        );
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['videos', 'images'],
-        allowsEditing: true,
-        quality: 0.8,
+        mediaTypes: ['videos'], // STRICTLY VIDEOS
+        allowsEditing: false, // Ensures compatibility across all Android versions
+        quality: 1,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -98,14 +123,14 @@ export default function SubmissionUploadScreen({ route, navigation }) {
         setErrorMessage(null);
       }
     } catch (err) {
-      setErrorMessage('Could not open media library: ' + err.message);
+      setErrorMessage('Could not open video library: ' + err.message);
     }
   };
 
-  // Perform Upload to Signed URL + Backend Confirmation (Throttled & Debounced)
+  // Perform Upload to Cloudinary & Backend Confirmation
   const handleUploadSubmission = useThrottledCallback(async () => {
     if (!selectedAsset) {
-      Alert.alert('Select Media', 'Please select a video or image file to upload.');
+      Alert.alert('Select Video', 'Please select your performance video to upload.');
       return;
     }
 
@@ -116,19 +141,18 @@ export default function SubmissionUploadScreen({ route, navigation }) {
 
     setIsUploading(true);
     setUploadProgress(10);
-    setUploadStatusText('Requesting secure upload authorization...');
+    setUploadStatusText('Requesting secure Cloudinary authorization...');
     setErrorMessage(null);
 
     try {
       const fileExt = selectedAsset.uri.split('.').pop() || 'mp4';
       const fileName = selectedAsset.fileName || `entry_${Date.now()}.${fileExt}`;
-      const isVideo = selectedAsset.type === 'video' || fileExt.toLowerCase().match(/(mp4|mov|m4v)/);
-      const fileType = isVideo ? 'video/mp4' : 'image/jpeg';
+      const fileType = 'video/mp4';
 
-      // Step 1: Request pre-signed URL from backend
       const targetCompId =
-        competition?._id || competition?.id || competition?.slug || 'feedants-classical-dance';
+        activeComp?._id || activeComp?.id || activeComp?.slug || 'feedants-classical-dance';
 
+      // Step 1: Request Cloudinary signed params from backend
       const signedRes = await apiClient.get(
         `/competitions/${targetCompId}/submissions/signed-url`,
         {
@@ -137,13 +161,15 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       );
 
       const signPayload = signedRes?.data || signedRes;
-      const { uploadUrl, key, apiKey, timestamp, signature, folder } = signPayload?.data || signPayload;
+      const { uploadUrl, key, apiKey, timestamp, signature, folder } =
+        signPayload?.data || signPayload;
+
       setUploadProgress(35);
-      setUploadStatusText('Uploading media to Cloudinary storage...');
+      setUploadStatusText('Uploading performance video to Cloudinary...');
 
       let mediaUrl = uploadUrl?.split('?')[0] || `https://storage.feedants.com/${key}`;
 
-      // Step 2: Upload direct to Cloudinary if credentials provided
+      // Step 2: Direct multipart upload to Cloudinary if signed parameters exist
       if (uploadUrl && apiKey && signature && timestamp) {
         try {
           const formData = new FormData();
@@ -172,7 +198,7 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       }
 
       setUploadProgress(95);
-      setUploadStatusText('Verifying and registering submission on server...');
+      setUploadStatusText('Registering submission on Feedants server...');
 
       // Step 3: Confirm submission record with backend
       await apiClient.post(`/competitions/${targetCompId}/submissions`, {
@@ -184,29 +210,40 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       setUploadProgress(100);
       setUploadStatusText('Complete!');
 
-      // Invalidate queries so competition details screen updates BottomActionBar to "Submission Uploaded"
-      queryClient.invalidateQueries({ queryKey: ['competition', competition?.slug] });
+      // Invalidate queries so competition details screen updates to "Submission Uploaded"
+      queryClient.invalidateQueries({
+        queryKey: ['competition', activeComp?.slug || 'feedants-classical-dance'],
+      });
 
       Alert.alert(
-        'Submission Uploaded! 🎉',
-        'Your performance entry has been securely recorded and sent to the judging panel.',
+        'Performance Video Submitted! 🎉',
+        'Your classical dance entry has been securely recorded and sent to the judging panel.',
         [
           {
-            text: 'View Details',
-            onPress: () => navigation.goBack(),
+            text: 'View Competition Details',
+            onPress: () => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate(ROUTES.MAIN_TABS, { tab: 'competitions' });
+              }
+            },
           },
         ]
       );
     } catch (err) {
       console.warn('[SubmissionUpload] Error:', err);
       setIsUploading(false);
-      const msg = err.response?.data?.message || err.message || 'Failed to upload submission. Please check connection and retry.';
+      const msg =
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to upload performance video. Please check connection and retry.';
       setErrorMessage(msg);
     }
   }, 1200);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -214,7 +251,7 @@ export default function SubmissionUploadScreen({ route, navigation }) {
             if (navigation.canGoBack()) {
               navigation.goBack();
             } else {
-              navigation.navigate(ROUTES.COMPETITION_DETAILS);
+              navigation.navigate(ROUTES.MAIN_TABS, { tab: 'competitions' });
             }
           }}
           style={styles.backButton}
@@ -223,12 +260,16 @@ export default function SubmissionUploadScreen({ route, navigation }) {
           <Ionicons name="arrow-back" size={24} color="#0F172A" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {existingSubmission ? 'Edit Submission' : 'Upload Submission'}
+          {existingSubmission ? 'Replace Video' : 'Submit Performance Video'}
         </Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Deadline Alert Banner */}
         <View
           style={[
@@ -239,10 +280,10 @@ export default function SubmissionUploadScreen({ route, navigation }) {
         >
           <Ionicons
             name={isWindowClosed ? 'alert-circle' : isUrgentDeadline ? 'alarm' : 'time-outline'}
-            size={20}
+            size={22}
             color={isWindowClosed ? '#B91C1C' : isUrgentDeadline ? '#D97706' : '#005F60'}
           />
-          <View style={{ flex: 1, marginLeft: 8 }}>
+          <View style={{ flex: 1, marginLeft: 10 }}>
             <Text
               style={[
                 styles.deadlineTitle,
@@ -254,7 +295,7 @@ export default function SubmissionUploadScreen({ route, navigation }) {
                 ? 'Submission Window Closed'
                 : isUrgentDeadline
                 ? '⚠️ Hurry! Deadline Closes in Less Than 1 Hour'
-                : 'Submission Closes In'}
+                : 'Performance Submission Deadline'}
             </Text>
             <Text
               style={[
@@ -272,55 +313,79 @@ export default function SubmissionUploadScreen({ route, navigation }) {
         {existingSubmission && !selectedAsset ? (
           <View style={styles.existingBox}>
             <View style={styles.existingHeader}>
-              <Ionicons name="checkmark-circle" size={18} color="#059669" />
-              <Text style={styles.existingTitle}>Current Submission Active</Text>
+              <Ionicons name="checkmark-circle" size={20} color="#059669" />
+              <Text style={styles.existingTitle}>Your Video is Already Submitted</Text>
             </View>
             <Text style={styles.existingDesc}>
-              You have already uploaded an entry. You can replace it with a new video or photo as long as the submission window is open.
+              You have already uploaded an entry. You can replace it with a better take before the deadline.
             </Text>
             <TouchableOpacity
               style={styles.replaceButton}
               onPress={handlePickMedia}
               activeOpacity={0.8}
             >
-              <Ionicons name="cloud-upload-outline" size={16} color="#005F60" />
-              <Text style={styles.replaceButtonText}>Select New File to Replace</Text>
+              <Ionicons name="videocam-outline" size={18} color="#005F60" />
+              <Text style={styles.replaceButtonText}>Select New Performance Video</Text>
             </TouchableOpacity>
           </View>
         ) : null}
 
-        {/* Media Picker / Preview Dropzone */}
+        {/* Selected Video Card with In-Card Submit CTA */}
         {selectedAsset ? (
           <View style={styles.previewCard}>
             <View style={styles.previewHeader}>
-              <Text style={styles.previewTitle}>Selected File</Text>
-              <TouchableOpacity onPress={handlePickMedia}>
-                <Text style={styles.changeFileText}>Change File</Text>
+              <View style={styles.selectedBadgeRow}>
+                <Ionicons name="videocam" size={16} color="#005F60" />
+                <Text style={styles.previewTitle}>Selected Performance Video</Text>
+              </View>
+              <TouchableOpacity onPress={handlePickMedia} activeOpacity={0.7}>
+                <Text style={styles.changeFileText}>Change Video</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.mediaContainer}>
-              <Image
-                source={{ uri: selectedAsset.uri }}
-                style={styles.thumbnail}
-                resizeMode="cover"
-              />
+              <View style={styles.videoIconContainer}>
+                <Ionicons name="play-circle" size={44} color="#005F60" />
+                <View style={styles.videoPill}>
+                  <Text style={styles.videoPillText}>VIDEO</Text>
+                </View>
+              </View>
+
               <View style={styles.assetDetails}>
                 <Text style={styles.assetName} numberOfLines={1}>
-                  {selectedAsset.fileName || 'Performance_Entry.mp4'}
+                  {selectedAsset.fileName || 'Classical_Dance_Performance.mp4'}
                 </Text>
                 <Text style={styles.assetMeta}>
-                  {selectedAsset.width && selectedAsset.height
-                    ? `${selectedAsset.width}x${selectedAsset.height}`
-                    : '1080p'}{' '}
-                  • {selectedAsset.duration ? `${Math.round(selectedAsset.duration)}s` : 'HD'}
+                  Format: MP4 • {selectedAsset.duration ? `${Math.round(selectedAsset.duration)}s duration` : 'HD Video'}
                 </Text>
                 <View style={styles.readyBadge}>
-                  <Ionicons name="checkmark" size={12} color="#059669" />
-                  <Text style={styles.readyText}>Ready to upload</Text>
+                  <Ionicons name="checkmark-circle" size={14} color="#059669" />
+                  <Text style={styles.readyText}>Ready to submit</Text>
                 </View>
               </View>
             </View>
+
+            {/* In-Card Submit Button (Instant & Impossible to Miss) */}
+            <TouchableOpacity
+              style={[
+                styles.inCardSubmitBtn,
+                (isUploading || isWindowClosed) && styles.submitButtonDisabled,
+              ]}
+              onPress={handleUploadSubmission}
+              disabled={isUploading || isWindowClosed}
+              activeOpacity={0.85}
+            >
+              {isUploading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <View style={styles.submitBtnContent}>
+                  <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
+                  <Text style={styles.inCardSubmitText}>
+                    {existingSubmission ? 'Confirm & Replace Video' : 'Submit Video Now'}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         ) : !existingSubmission ? (
           <TouchableOpacity
@@ -329,14 +394,15 @@ export default function SubmissionUploadScreen({ route, navigation }) {
             activeOpacity={0.8}
           >
             <View style={styles.dropzoneIconCircle}>
-              <MaterialCommunityIcons name="video-plus-outline" size={36} color="#005F60" />
+              <MaterialCommunityIcons name="video-plus-outline" size={42} color="#005F60" />
             </View>
-            <Text style={styles.dropzoneTitle}>Choose Video or Photo</Text>
+            <Text style={styles.dropzoneTitle}>Choose Performance Video</Text>
             <Text style={styles.dropzoneSubtitle}>
-              MP4, MOV, or JPG • Max 500MB • Up to 3 minutes
+              Classical Dance Performance • MP4 or MOV • Max 500MB • Up to 3 min
             </Text>
             <View style={styles.browseButton}>
-              <Text style={styles.browseButtonText}>Browse Media Library</Text>
+              <Ionicons name="folder-open-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.browseButtonText}>Browse Video Files</Text>
             </View>
           </TouchableOpacity>
         ) : null}
@@ -354,7 +420,7 @@ export default function SubmissionUploadScreen({ route, navigation }) {
             <View style={styles.progressNotice}>
               <ActivityIndicator size="small" color="#005F60" />
               <Text style={styles.progressNoticeText}>
-                Please keep the app open until upload completes.
+                Please keep the app open while your video is uploading.
               </Text>
             </View>
           </View>
@@ -363,9 +429,9 @@ export default function SubmissionUploadScreen({ route, navigation }) {
         {/* Error Box with Retry */}
         {errorMessage && (
           <View style={styles.errorBox}>
-            <Ionicons name="alert-circle-outline" size={20} color="#B91C1C" />
+            <Ionicons name="alert-circle-outline" size={22} color="#B91C1C" />
             <View style={{ flex: 1 }}>
-              <Text style={styles.errorTitle}>Upload Failed</Text>
+              <Text style={styles.errorTitle}>Upload Error</Text>
               <Text style={styles.errorMessage}>{errorMessage}</Text>
             </View>
             <TouchableOpacity
@@ -380,24 +446,26 @@ export default function SubmissionUploadScreen({ route, navigation }) {
 
         {/* Submission Guidelines */}
         <View style={styles.guidelinesCard}>
-          <Text style={styles.guidelinesTitle}>Judging Requirements</Text>
+          <Text style={styles.guidelinesTitle}>Video Judging Requirements</Text>
           <View style={styles.guidelineItem}>
             <Ionicons name="checkmark-circle" size={16} color="#005F60" />
-            <Text style={styles.guidelineText}>Single continuous video take without edit cuts.</Text>
+            <Text style={styles.guidelineText}>Performance must be a single continuous video take without edit cuts.</Text>
           </View>
           <View style={styles.guidelineItem}>
             <Ionicons name="checkmark-circle" size={16} color="#005F60" />
-            <Text style={styles.guidelineText}>Full body frame clearly visible with proper lighting.</Text>
+            <Text style={styles.guidelineText}>Full body frame must be clearly visible with adequate lighting.</Text>
           </View>
           <View style={styles.guidelineItem}>
             <Ionicons name="checkmark-circle" size={16} color="#005F60" />
-            <Text style={styles.guidelineText}>Audio track must be clearly audible.</Text>
+            <Text style={styles.guidelineText}>Audio track / Ghungroo & music must be clearly audible.</Text>
           </View>
         </View>
+
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Footer Submit CTA */}
-      <View style={styles.footer}>
+      {/* Sticky Bottom Submit Button (Full Width, Permanent & Distinct) */}
+      <View style={styles.stickyFooter}>
         <TouchableOpacity
           style={[
             styles.submitButton,
@@ -411,37 +479,18 @@ export default function SubmissionUploadScreen({ route, navigation }) {
             <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
             <View style={styles.submitBtnContent}>
-              <Ionicons name="cloud-upload" size={18} color="#FFFFFF" />
+              <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
               <Text style={styles.submitBtnText}>
-                {existingSubmission ? 'Confirm & Replace Entry' : 'Confirm & Submit Entry'}
+                {selectedAsset
+                  ? existingSubmission
+                    ? 'Confirm & Replace Performance Video'
+                    : 'Submit Performance Video'
+                  : 'Select a Video to Submit'}
               </Text>
             </View>
           )}
         </TouchableOpacity>
       </View>
-
-      {/* Persistent Bottom Tab Bar */}
-      <BottomTabBar
-        activeTab="create"
-        onTabPress={(tab) => {
-          switch (tab) {
-            case 'home':
-              navigation.navigate(ROUTES.HOME);
-              break;
-            case 'explore':
-              navigation.navigate(ROUTES.EXPLORE);
-              break;
-            case 'create':
-              break;
-            case 'competitions':
-              navigation.navigate(ROUTES.COMPETITION_DETAILS);
-              break;
-            case 'profile':
-              navigation.navigate(ROUTES.PROFILE);
-              break;
-          }
-        }}
-      />
     </SafeAreaView>
   );
 }
@@ -464,14 +513,18 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: '#0F172A',
   },
   content: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 14,
+    backgroundColor: '#F8FAFC',
+  },
+  scrollContent: {
+    paddingTop: 16,
+    paddingBottom: 20,
   },
   deadlineBanner: {
     flexDirection: 'row',
@@ -479,8 +532,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0FDFA',
     borderWidth: 1,
     borderColor: '#99F6E4',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 14,
+    padding: 14,
     marginBottom: 16,
   },
   urgentBanner: {
@@ -497,102 +550,146 @@ const styles = StyleSheet.create({
     color: '#0F766E',
   },
   deadlineTime: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
     color: '#115E59',
-    marginTop: 1,
+    marginTop: 2,
   },
   dropzone: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
     borderWidth: 2,
-    borderColor: '#CBD5E1',
+    borderColor: '#005F60',
     borderStyle: 'dashed',
     borderRadius: 16,
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingVertical: 36,
     paddingHorizontal: 20,
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   dropzoneIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: '#E6F4F1',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   dropzoneTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   dropzoneSubtitle: {
     fontSize: 12,
     color: '#64748B',
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
+    lineHeight: 18,
+    paddingHorizontal: 10,
   },
   browseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: THEME.colors.brandDarkTeal,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 10,
+    shadowColor: '#005F60',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   browseButtonText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
   },
   previewCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#005F60',
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
   previewHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 8,
+  },
+  selectedBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   previewTitle: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#475569',
+    fontWeight: '800',
+    color: '#005F60',
     textTransform: 'uppercase',
   },
   changeFileText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#005F60',
+    fontWeight: '700',
+    color: '#DC2626',
   },
   mediaContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
+    marginBottom: 16,
   },
-  thumbnail: {
-    width: 72,
-    height: 72,
-    borderRadius: 10,
-    backgroundColor: '#E2E8F0',
+  videoIconContainer: {
+    width: 74,
+    height: 74,
+    borderRadius: 12,
+    backgroundColor: '#E6F4F1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  videoPill: {
+    position: 'absolute',
+    bottom: 4,
+    backgroundColor: '#005F60',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  videoPillText: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontWeight: '800',
   },
   assetDetails: {
     flex: 1,
   },
   assetName: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: '#0F172A',
   },
   assetMeta: {
     fontSize: 12,
     color: '#64748B',
-    marginTop: 2,
+    marginTop: 4,
   },
   readyBadge: {
     flexDirection: 'row',
@@ -602,13 +699,30 @@ const styles = StyleSheet.create({
   },
   readyText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#059669',
   },
-  progressCard: {
-    backgroundColor: '#F8FAFC',
+  inCardSubmitBtn: {
+    backgroundColor: THEME.colors.brandDarkTeal,
     borderRadius: 12,
-    padding: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#005F60',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  inCardSubmitText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  progressCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 16,
@@ -625,7 +739,7 @@ const styles = StyleSheet.create({
     color: '#0F172A',
   },
   progressPercentage: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
     color: '#005F60',
   },
@@ -656,8 +770,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
     borderColor: '#FECDD3',
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: 12,
+    padding: 14,
     marginBottom: 16,
   },
   errorTitle: {
@@ -666,7 +780,7 @@ const styles = StyleSheet.create({
     color: '#991B1B',
   },
   errorMessage: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#B91C1C',
     marginTop: 2,
   },
@@ -685,25 +799,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#ECFDF5',
     borderWidth: 1,
     borderColor: '#A7F3D0',
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: 14,
+    padding: 16,
     marginBottom: 16,
   },
   existingHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   existingTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
     color: '#065F46',
   },
   existingDesc: {
     fontSize: 12,
     color: '#047857',
-    lineHeight: 16,
+    lineHeight: 18,
   },
   replaceButton: {
     flexDirection: 'row',
@@ -713,48 +827,60 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#A7D9D3',
     borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
     alignSelf: 'flex-start',
     marginTop: 10,
   },
   replaceButtonText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: '#005F60',
   },
   guidelinesCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 20,
   },
   guidelinesTitle: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#334155',
-    marginBottom: 10,
+    marginBottom: 12,
     textTransform: 'uppercase',
   },
   guidelineItem: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   guidelineText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#475569',
     flex: 1,
+    lineHeight: 18,
   },
-  footer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+  stickyFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 14,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 8,
+    zIndex: 99,
   },
   submitButton: {
     backgroundColor: THEME.colors.brandDarkTeal,
@@ -762,9 +888,15 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#005F60',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
   submitButtonDisabled: {
     backgroundColor: '#94A3B8',
+    elevation: 0,
   },
   submitBtnContent: {
     flexDirection: 'row',
@@ -774,6 +906,7 @@ const styles = StyleSheet.create({
   submitBtnText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
 });
