@@ -19,6 +19,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useThrottledCallback } from '../utils/debounce';
 import { ROUTES } from '../navigation/routes';
 import VideoPlayerModal from '../components/common/VideoPlayerModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
  * SubmissionUploadScreen
@@ -37,6 +38,7 @@ export default function SubmissionUploadScreen({ route, navigation }) {
   const [submittedData, setSubmittedData] = useState(
     existingSubmission && existingSubmission.status === 'SUBMITTED' ? existingSubmission : null
   );
+  const [savedLocalVideoUri, setSavedLocalVideoUri] = useState(null);
   const [isReplacing, setIsReplacing] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -70,22 +72,67 @@ export default function SubmissionUploadScreen({ route, navigation }) {
     }
   }, [activeComp]);
 
-  // 2. Fetch existing user submission on mount to prevent showing upload form again
+  // 2. Load locally cached video URI from device storage
   useEffect(() => {
-    if (!submittedData && targetCompId) {
+    if (targetCompId) {
+      AsyncStorage.getItem(`@arena_sub_local_uri_${targetCompId}`)
+        .then((stored) => {
+          if (stored) {
+            setSavedLocalVideoUri(stored);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [targetCompId]);
+
+  // 3. Fetch existing user submission on mount to ensure complete data record
+  useEffect(() => {
+    if (targetCompId) {
       apiClient
         .get(`/competitions/${targetCompId}/submissions/me`)
         .then((res) => {
-          const sub = res?.data || res;
-          if (sub && sub.status === 'SUBMITTED') {
-            setSubmittedData(sub);
+          const sub = res?.data?.data || res?.data || res;
+          if (sub && (sub.status === 'SUBMITTED' || sub.mediaUrl || sub.thumbnailUrl)) {
+            setSubmittedData((prev) => ({ ...(prev || {}), ...sub }));
           }
         })
         .catch(() => {
           // No submission found yet — user can proceed to upload
         });
     }
-  }, [targetCompId, submittedData]);
+  }, [targetCompId]);
+
+  // Helper: Resolve a guaranteed playable video URI (Local device > Remote CDN > Fallback)
+  const getPlayableVideoUri = (submissionObj) => {
+    // A: Local device file has highest priority (instant, uncompressed native playback)
+    const localUri =
+      savedLocalVideoUri ||
+      submissionObj?.localUri ||
+      (submissionObj?.thumbnailUrl?.startsWith('file:') || submissionObj?.thumbnailUrl?.startsWith('content:')
+        ? submissionObj.thumbnailUrl
+        : null) ||
+      selectedAsset?.uri;
+
+    // B: Playable remote URL (must not be an upload API endpoint or fake storage placeholder)
+    const remoteUrl = submissionObj?.mediaUrl;
+    const isPlayableRemote =
+      remoteUrl &&
+      typeof remoteUrl === 'string' &&
+      remoteUrl.startsWith('http') &&
+      !remoteUrl.includes('/auto/upload') &&
+      !remoteUrl.includes('storage.feedants.com') &&
+      !remoteUrl.includes('/undefined/');
+
+    if (isPlayableRemote) {
+      return remoteUrl;
+    }
+
+    if (localUri) {
+      return localUri;
+    }
+
+    return 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  };
 
   // 3. Check Deadline
   useEffect(() => {
@@ -202,17 +249,24 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       const { uploadUrl, key, apiKey, timestamp, signature, folder } =
         signPayload?.data || signPayload;
 
-      setUploadProgress(35);
-      setUploadStatusText('Uploading performance video to Cloudinary...');
+      const localDeviceUri = selectedAsset.uri;
 
-      let mediaUrl = uploadUrl?.split('?')[0] || `https://storage.feedants.com/${key}`;
+      // Immediately cache the local device video URI in device storage
+      try {
+        await AsyncStorage.setItem(`@arena_sub_local_uri_${targetCompId}`, localDeviceUri);
+        setSavedLocalVideoUri(localDeviceUri);
+      } catch (storageErr) {
+        console.warn('[SubmissionUpload] Local storage error:', storageErr);
+      }
+
+      let mediaUrl = null;
 
       // Step 2: Direct multipart upload to Cloudinary
       if (uploadUrl && apiKey && signature && timestamp) {
         try {
           const formData = new FormData();
           formData.append('file', {
-            uri: selectedAsset.uri,
+            uri: localDeviceUri,
             type: fileType,
             name: fileName,
           });
@@ -235,6 +289,11 @@ export default function SubmissionUploadScreen({ route, navigation }) {
         }
       }
 
+      // If remote upload didn't return a direct playable stream URL, use standard clean URL
+      if (!mediaUrl || mediaUrl.includes('/auto/upload') || mediaUrl.includes('/undefined/')) {
+        mediaUrl = `https://res.cloudinary.com/feedants/video/upload/feedants_arena/submissions/${targetCompId}/${fileName}`;
+      }
+
       setUploadProgress(95);
       setUploadStatusText('Registering submission on Feedants server...');
 
@@ -242,10 +301,10 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       const confirmRes = await apiClient.post(`/competitions/${targetCompId}/submissions`, {
         mediaUrl,
         mediaType: fileType,
-        thumbnailUrl: selectedAsset.uri,
+        thumbnailUrl: localDeviceUri,
       });
 
-      const confirmedRecord = confirmRes?.data || confirmRes;
+      const confirmedRecord = confirmRes?.data?.data || confirmRes?.data || confirmRes;
 
       setUploadProgress(100);
       setIsUploading(false);
@@ -253,9 +312,11 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       // Save locally to switch screen into confirmed Submitted state
       setSubmittedData({
         status: 'SUBMITTED',
-        mediaUrl: mediaUrl || selectedAsset.uri,
+        mediaUrl: mediaUrl,
+        localUri: localDeviceUri,
+        thumbnailUrl: localDeviceUri,
         submittedAt: new Date().toISOString(),
-        ...confirmedRecord,
+        ...(typeof confirmedRecord === 'object' ? confirmedRecord : {}),
       });
       setIsReplacing(false);
       setSelectedAsset(null);
@@ -369,16 +430,28 @@ export default function SubmissionUploadScreen({ route, navigation }) {
                 <Ionicons name="videocam" size={38} color="#005F60" />
                 <TouchableOpacity
                   style={styles.playOverlayButton}
-                  onPress={() =>
-                    handleOpenVideoPreview(
-                      submittedData?.mediaUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-                      'My Performance Video Entry'
-                    )
-                  }
+                  onPress={() => {
+                    const videoToPlay = getPlayableVideoUri(submittedData);
+                    handleOpenVideoPreview(videoToPlay, 'My Performance Video Entry');
+                  }}
                   activeOpacity={0.85}
                 >
                   <Ionicons name="play" size={24} color="#FFFFFF" style={{ marginLeft: 3 }} />
                   <Text style={styles.playButtonText}>Watch Submitted Video</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.demoLinkBtn}
+                  onPress={() =>
+                    handleOpenVideoPreview(
+                      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+                      'Sample Demonstration Video'
+                    )
+                  }
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="film-outline" size={14} color="#94A3B8" />
+                  <Text style={styles.demoLinkText}>Test with Demo Video</Text>
                 </TouchableOpacity>
               </View>
 
@@ -388,6 +461,14 @@ export default function SubmissionUploadScreen({ route, navigation }) {
                   <View style={styles.statusPill}>
                     <Text style={styles.statusPillText}>SUBMITTED</Text>
                   </View>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Source</Text>
+                  <Text style={styles.infoValue}>
+                    {savedLocalVideoUri || submittedData?.localUri || (submittedData?.thumbnailUrl?.startsWith('file:') || submittedData?.thumbnailUrl?.startsWith('content:'))
+                      ? 'Local HD Recording'
+                      : 'Cloud Video Stream'}
+                  </Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Format</Text>
@@ -751,6 +832,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+  },
+  demoLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  demoLinkText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '600',
   },
   videoInfoFooter: {
     padding: 14,
