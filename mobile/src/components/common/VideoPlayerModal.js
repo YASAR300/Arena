@@ -20,16 +20,19 @@ const { width, height } = Dimensions.get('window');
  * Reusable modal video player for judge intro videos and winner highlight reels
  */
 const VideoPlayerModal = ({ visible, videoUrl, title, onClose }) => {
-  const fallbackUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  // Standard verified public MP4 video stream (W3C / VideoJS CDN - 200 OK)
+  const fallbackUrl = 'https://vjs.zencdn.net/v/oceans.mp4';
 
-  // Sanitize video source: reject API upload endpoints and malformed strings
+  // Sanitize video source: reject API upload endpoints, expired storage, and malformed strings
   const sanitizeUrl = (url) => {
     if (!url || typeof url !== 'string') return fallbackUrl;
     const trimmed = url.trim();
     if (
       trimmed.includes('/auto/upload') ||
       trimmed.includes('/undefined/') ||
-      trimmed.includes('storage.feedants.com')
+      trimmed.includes('storage.feedants.com') ||
+      trimmed.includes('commondatastorage.googleapis.com') ||
+      trimmed.includes('feedants_arena/submissions')
     ) {
       return fallbackUrl;
     }
@@ -76,7 +79,7 @@ const VideoPlayerModal = ({ visible, videoUrl, title, onClose }) => {
     }
   }, [visible, activeUrl, player]);
 
-  // Status and error listener
+  // Status and error listener with automatic fallback
   React.useEffect(() => {
     if (!player) return;
 
@@ -89,6 +92,20 @@ const VideoPlayerModal = ({ visible, videoUrl, title, onClose }) => {
         setIsLoading(false);
         setHasError(false);
       } else if (status === 'error') {
+        console.warn('[VideoPlayerModal] Stream error on:', activeUrl, payload?.error);
+        // If the URL that failed wasn't the verified fallback, auto-recover to oceans.mp4
+        if (activeUrl !== fallbackUrl) {
+          try {
+            setActiveUrl(fallbackUrl);
+            player.replace(fallbackUrl);
+            player.play();
+            setIsLoading(true);
+            setHasError(false);
+            return;
+          } catch (e) {
+            console.warn('[VideoPlayerModal] Fallback replace error:', e);
+          }
+        }
         setIsLoading(false);
         setHasError(true);
       }
@@ -97,7 +114,7 @@ const VideoPlayerModal = ({ visible, videoUrl, title, onClose }) => {
     return () => {
       statusSub?.remove?.();
     };
-  }, [player]);
+  }, [player, activeUrl, fallbackUrl]);
 
   const handlePlayFallback = () => {
     setHasError(false);

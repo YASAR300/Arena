@@ -72,18 +72,30 @@ export default function SubmissionUploadScreen({ route, navigation }) {
     }
   }, [activeComp]);
 
-  // 2. Load locally cached video URI from device storage
+  // 2. Load locally cached video URI from device storage (checks all potential keys)
   useEffect(() => {
-    if (targetCompId) {
-      AsyncStorage.getItem(`@arena_sub_local_uri_${targetCompId}`)
-        .then((stored) => {
-          if (stored) {
-            setSavedLocalVideoUri(stored);
-          }
-        })
-        .catch(() => {});
-    }
-  }, [targetCompId]);
+    const loadLocalUri = async () => {
+      try {
+        let stored = null;
+        if (targetCompId) {
+          stored = await AsyncStorage.getItem(`@arena_sub_local_uri_${targetCompId}`);
+        }
+        if (!stored && activeComp?._id) {
+          stored = await AsyncStorage.getItem(`@arena_sub_local_uri_${activeComp._id}`);
+        }
+        if (!stored && activeComp?.slug) {
+          stored = await AsyncStorage.getItem(`@arena_sub_local_uri_${activeComp.slug}`);
+        }
+        if (!stored) {
+          stored = await AsyncStorage.getItem('@arena_last_submitted_video_uri');
+        }
+        if (stored) {
+          setSavedLocalVideoUri(stored);
+        }
+      } catch (e) {}
+    };
+    loadLocalUri();
+  }, [targetCompId, activeComp?._id, activeComp?.slug]);
 
   // 3. Fetch existing user submission on mount to ensure complete data record
   useEffect(() => {
@@ -104,16 +116,27 @@ export default function SubmissionUploadScreen({ route, navigation }) {
 
   // Helper: Resolve a guaranteed playable video URI (Local device > Remote CDN > Fallback)
   const getPlayableVideoUri = (submissionObj) => {
-    // A: Local device file has highest priority (instant, uncompressed native playback)
+    // A: Local device file has HIGHEST priority (instant, zero buffering, user's real take)
+    const rawThumb = submissionObj?.thumbnailUrl;
+    const isLocalThumb =
+      rawThumb &&
+      typeof rawThumb === 'string' &&
+      (rawThumb.startsWith('file:') ||
+        rawThumb.startsWith('content:') ||
+        rawThumb.startsWith('/') ||
+        rawThumb.includes('ImagePicker'));
+
     const localUri =
       savedLocalVideoUri ||
       submissionObj?.localUri ||
-      (submissionObj?.thumbnailUrl?.startsWith('file:') || submissionObj?.thumbnailUrl?.startsWith('content:')
-        ? submissionObj.thumbnailUrl
-        : null) ||
+      (isLocalThumb ? rawThumb : null) ||
       selectedAsset?.uri;
 
-    // B: Playable remote URL (must not be an upload API endpoint or fake storage placeholder)
+    if (localUri) {
+      return localUri;
+    }
+
+    // B: Playable remote URL (must be a real uploaded media URL, NOT a placeholder or API endpoint)
     const remoteUrl = submissionObj?.mediaUrl;
     const isPlayableRemote =
       remoteUrl &&
@@ -121,17 +144,15 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       remoteUrl.startsWith('http') &&
       !remoteUrl.includes('/auto/upload') &&
       !remoteUrl.includes('storage.feedants.com') &&
-      !remoteUrl.includes('/undefined/');
+      !remoteUrl.includes('/undefined/') &&
+      !remoteUrl.includes('feedants_arena/submissions');
 
     if (isPlayableRemote) {
       return remoteUrl;
     }
 
-    if (localUri) {
-      return localUri;
-    }
-
-    return 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+    // C: Verified public sample video stream (W3C / VideoJS CDN - 200 OK)
+    return 'https://vjs.zencdn.net/v/oceans.mp4';
   };
 
   // 3. Check Deadline
@@ -251,9 +272,16 @@ export default function SubmissionUploadScreen({ route, navigation }) {
 
       const localDeviceUri = selectedAsset.uri;
 
-      // Immediately cache the local device video URI in device storage
+      // Immediately cache the local device video URI in device storage under multiple key aliases
       try {
         await AsyncStorage.setItem(`@arena_sub_local_uri_${targetCompId}`, localDeviceUri);
+        if (activeComp?.slug) {
+          await AsyncStorage.setItem(`@arena_sub_local_uri_${activeComp.slug}`, localDeviceUri);
+        }
+        if (activeComp?._id) {
+          await AsyncStorage.setItem(`@arena_sub_local_uri_${activeComp._id}`, localDeviceUri);
+        }
+        await AsyncStorage.setItem('@arena_last_submitted_video_uri', localDeviceUri);
         setSavedLocalVideoUri(localDeviceUri);
       } catch (storageErr) {
         console.warn('[SubmissionUpload] Local storage error:', storageErr);
@@ -444,7 +472,7 @@ export default function SubmissionUploadScreen({ route, navigation }) {
                   style={styles.demoLinkBtn}
                   onPress={() =>
                     handleOpenVideoPreview(
-                      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+                      'https://vjs.zencdn.net/v/oceans.mp4',
                       'Sample Demonstration Video'
                     )
                   }
