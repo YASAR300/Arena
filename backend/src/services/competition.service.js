@@ -74,6 +74,7 @@ const computeUserCompetitionState = async (competition, userId) => {
     registrationStatus: registration ? registration.status : null,
     hasSubmitted,
     submissionStatus: submission ? submission.status : null,
+    submission: submission || null,
     competitionLifecycleStatus: lifecycleStatus,
     canRegister,
     canSubmit,

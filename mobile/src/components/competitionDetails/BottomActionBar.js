@@ -83,14 +83,15 @@ const BottomActionBar = ({
 
     // 2. If user IS confirmed registered:
     switch (ctaAction) {
+      case 'VIEW_SUBMISSION':
       case 'SUBMISSION_UPLOADED':
         return {
-          title: t('submissionUploaded'),
-          subtitle: 'Tap to view or replace',
+          title: '✓ ' + (t('submissionUploaded') || 'Submission Uploaded'),
+          subtitle: 'Video received • Tap to watch or replace',
           disabled: false,
-          bgColor: THEME.colors.brandDarkTeal,
+          bgColor: '#059669',
           textColor: '#FFFFFF',
-          action: 'SUBMISSION_UPLOADED',
+          action: 'VIEW_SUBMISSION',
         };
 
       case 'REGISTERED_WAITING_SUBMISSION':

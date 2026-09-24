@@ -93,6 +93,7 @@ export default function CompetitionDetailsScreen({
         });
         break;
 
+      case 'VIEW_SUBMISSION':
       case 'SUBMISSION_UPLOADED':
         navigation.navigate(ROUTES.SUBMISSION_UPLOAD, {
           competition,
