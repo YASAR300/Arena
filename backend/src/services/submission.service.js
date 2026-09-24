@@ -1,32 +1,27 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const { Submission, Registration, Competition } = require('../models');
 const ApiError = require('../utils/apiError');
+const cloudinary = require('../config/cloudinary');
 
 /**
- * Submission Service
- *
- * DESIGN DECISION — Signed URL Upload Pattern:
- * ─────────────────────────────────────────────
- * WHY we do NOT proxy video uploads through Express:
- * 1. Large video files (50MB–500MB) would saturate Node.js event loop threads
- *    and exhaust server memory, making the API unresponsive for all other users.
- * 2. Direct-to-storage uploads (S3, Cloudinary) offload bandwidth and storage
- *    to CDN-backed infrastructure with built-in multipart, retry, and progress.
- * 3. Signed URL approach: backend generates a time-limited pre-signed URL,
- *    client uploads directly to S3/Cloudinary, then confirms with backend via
- *    a lightweight POST containing just the final mediaUrl.
- *
- * ASSUMPTION (noted in README): 1 submission per user per competition.
- * The schema enforces this with a unique index on registrationId.
+ * Robust helper to resolve competition whether passed as an ObjectId or as a slug
  */
+const findCompetition = async (idOrSlug) => {
+  if (!idOrSlug || idOrSlug === 'undefined' || idOrSlug === 'null') return null;
+  if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
+    const comp = await Competition.findById(idOrSlug);
+    if (comp) return comp;
+  }
+  return await Competition.findOne({ slug: idOrSlug });
+};
 
 /**
- * Generate a pre-signed upload URL.
- * In production: use AWS SDK s3.createPresignedPost() or Cloudinary API.
- * Here: returns a mock signed URL structure for demo purposes.
+ * Generate a pre-signed upload URL for Cloudinary.
+ * Client uploads directly to Cloudinary with real signature and receives CDN URL.
  */
 const generateSignedUploadUrl = async ({ competitionId, userId, fileName, fileType }) => {
-  const competition = await Competition.findById(competitionId);
+  const competition = await findCompetition(competitionId);
   if (!competition) throw ApiError.notFound('Competition not found');
 
   const now = new Date();
@@ -36,32 +31,55 @@ const generateSignedUploadUrl = async ({ competitionId, userId, fileName, fileTy
 
   const registration = await Registration.findOne({
     userId,
-    competitionId,
+    competitionId: competition._id,
     status: 'CONFIRMED',
   });
   if (!registration) {
     throw ApiError.forbidden('You must be a confirmed registrant to upload a submission');
   }
 
-  // MOCK signed URL — replace with real AWS/Cloudinary SDK call in production
-  const uploadKey = `submissions/${competitionId}/${userId}/${Date.now()}_${fileName}`;
-  const mockSignedUrl = `https://feedants-submissions.s3.ap-south-1.amazonaws.com/${uploadKey}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=3600&X-Amz-Signature=${crypto.randomBytes(20).toString('hex')}`;
+  const timestamp = Math.round(new Date().getTime() / 1000);
+  const folder = `feedants_arena/submissions/${competition._id}`;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
 
-  console.log(`[SubmissionService] Generated signed URL for ${uploadKey}`);
+  // Calculate HMAC signature according to Cloudinary spec
+  const paramsToSign = {
+    folder,
+    timestamp,
+  };
+  const signature = cloudinary.utils.api_sign_request(paramsToSign, apiSecret);
+
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`;
+  const uploadKey = `${folder}/${Date.now()}_${fileName || 'media'}`;
+
+  console.log(`[SubmissionService] Generated Cloudinary signed parameters for ${uploadKey}`);
 
   return {
-    uploadUrl: mockSignedUrl,
+    uploadUrl,
+    apiKey,
+    timestamp,
+    signature,
+    folder,
+    cloudName,
     key: uploadKey,
     expiresInSeconds: 3600,
-    fields: { 'Content-Type': fileType },
+    fields: {
+      api_key: apiKey,
+      timestamp,
+      signature,
+      folder,
+      'Content-Type': fileType,
+    },
   };
 };
 
 /**
- * Confirm submission after client has uploaded to storage
+ * Confirm submission after client has uploaded to Cloudinary
  */
 const createSubmission = async ({ competitionId, userId, mediaUrl, mediaType, thumbnailUrl }) => {
-  const competition = await Competition.findById(competitionId);
+  const competition = await findCompetition(competitionId);
   if (!competition) throw ApiError.notFound('Competition not found');
 
   const now = new Date();
@@ -71,7 +89,7 @@ const createSubmission = async ({ competitionId, userId, mediaUrl, mediaType, th
 
   const registration = await Registration.findOne({
     userId,
-    competitionId,
+    competitionId: competition._id,
     status: 'CONFIRMED',
   });
 
@@ -92,7 +110,7 @@ const createSubmission = async ({ competitionId, userId, mediaUrl, mediaType, th
 
   const submission = await Submission.create({
     userId,
-    competitionId,
+    competitionId: competition._id,
     registrationId: registration._id,
     mediaUrl,
     mediaType,
@@ -108,8 +126,15 @@ const createSubmission = async ({ competitionId, userId, mediaUrl, mediaType, th
  * Get current user's own submission
  */
 const getMySubmission = async (competitionId, userId) => {
-  const submission = await Submission.findOne({ userId, competitionId }).lean();
+  const competition = await findCompetition(competitionId);
+  if (!competition) return null;
+  const submission = await Submission.findOne({ userId, competitionId: competition._id }).lean();
   return submission;
 };
 
-module.exports = { generateSignedUploadUrl, createSubmission, getMySubmission };
+module.exports = {
+  findCompetition,
+  generateSignedUploadUrl,
+  createSubmission,
+  getMySubmission,
+};

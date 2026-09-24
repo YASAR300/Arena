@@ -126,33 +126,56 @@ export default function SubmissionUploadScreen({ route, navigation }) {
       const fileType = isVideo ? 'video/mp4' : 'image/jpeg';
 
       // Step 1: Request pre-signed URL from backend
+      const targetCompId =
+        competition?._id || competition?.id || competition?.slug || 'feedants-classical-dance';
+
       const signedRes = await apiClient.get(
-        `/competitions/${competition._id}/submissions/signed-url`,
+        `/competitions/${targetCompId}/submissions/signed-url`,
         {
           params: { fileName, fileType },
         }
       );
 
       const signPayload = signedRes?.data || signedRes;
-      const { uploadUrl, key } = signPayload?.data || signPayload;
+      const { uploadUrl, key, apiKey, timestamp, signature, folder } = signPayload?.data || signPayload;
       setUploadProgress(35);
-      setUploadStatusText('Uploading media directly to storage...');
+      setUploadStatusText('Uploading media to Cloudinary storage...');
 
-      // Step 2: Upload direct to signed URL with progress tracking
-      // Simulate progress ticks for rich visual feedback
-      for (let p = 40; p <= 90; p += 15) {
-        await new Promise((res) => setTimeout(res, 200));
-        setUploadProgress(p);
+      let mediaUrl = uploadUrl?.split('?')[0] || `https://storage.feedants.com/${key}`;
+
+      // Step 2: Upload direct to Cloudinary if credentials provided
+      if (uploadUrl && apiKey && signature && timestamp) {
+        try {
+          const formData = new FormData();
+          formData.append('file', {
+            uri: selectedAsset.uri,
+            type: fileType,
+            name: fileName,
+          });
+          formData.append('api_key', String(apiKey));
+          formData.append('timestamp', String(timestamp));
+          formData.append('signature', String(signature));
+          if (folder) formData.append('folder', String(folder));
+
+          setUploadProgress(60);
+          const cldRes = await fetch(uploadUrl, {
+            method: 'POST',
+            body: formData,
+          });
+          const cldJson = await cldRes.json();
+          if (cldJson?.secure_url || cldJson?.url) {
+            mediaUrl = cldJson.secure_url || cldJson.url;
+          }
+        } catch (uploadErr) {
+          console.warn('[SubmissionUpload] Cloudinary upload fallback:', uploadErr);
+        }
       }
-
-      // Final media URL (CDN URL from storage key)
-      const mediaUrl = uploadUrl.split('?')[0] || `https://storage.feedants.com/${key}`;
 
       setUploadProgress(95);
       setUploadStatusText('Verifying and registering submission on server...');
 
       // Step 3: Confirm submission record with backend
-      await apiClient.post(`/competitions/${competition._id}/submissions`, {
+      await apiClient.post(`/competitions/${targetCompId}/submissions`, {
         mediaUrl,
         mediaType: fileType,
         thumbnailUrl: selectedAsset.uri,

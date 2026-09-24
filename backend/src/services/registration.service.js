@@ -46,12 +46,21 @@ const ApiError = require('../utils/apiError');
  *   uses a replica set, so this is safe for production.
  */
 
+const findCompetition = async (idOrSlug) => {
+  if (!idOrSlug || idOrSlug === 'undefined' || idOrSlug === 'null') return null;
+  if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
+    const comp = await Competition.findById(idOrSlug);
+    if (comp) return comp;
+  }
+  return await Competition.findOne({ slug: idOrSlug });
+};
+
 /**
  * Step 1: Initiate payment order — called before registration is confirmed.
  * Returns an order object for the client to open Razorpay checkout.
  */
 const initiatePaymentForRegistration = async (competitionId, userId, referralCode) => {
-  const competition = await Competition.findById(competitionId);
+  const competition = await findCompetition(competitionId);
   if (!competition || !competition.isActive) {
     throw ApiError.notFound('Competition not found');
   }
@@ -138,7 +147,7 @@ const confirmRegistration = async ({ competitionId, userId, razorpay_order_id, r
     throw ApiError.badRequest('Payment record not found or already processed');
   }
 
-  const competition = await Competition.findById(competitionId);
+  const competition = await findCompetition(competitionId);
   if (!competition) throw ApiError.notFound('Competition not found');
 
   // Fast-path guard: if spots are already full, immediately reject with 409 without opening expensive transaction
@@ -161,7 +170,7 @@ const confirmRegistration = async ({ competitionId, userId, razorpay_order_id, r
       // If condition fails (sold out), returns null.
       const updatedCompetition = await Competition.findOneAndUpdate(
         {
-          _id: competitionId,
+          _id: competition._id,
           spotsBooked: { $lt: competition.totalSpots },
           isActive: true,
         },
@@ -183,7 +192,7 @@ const confirmRegistration = async ({ competitionId, userId, razorpay_order_id, r
         [
           {
             userId,
-            competitionId,
+            competitionId: competition._id,
             registeredAt: new Date(),
             entryFeePaid: competition.entryFee,
             paymentId: payment._id,

@@ -7,10 +7,6 @@
     "orientation": "portrait",
     "icon": "./src/assets/logo.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true
     },
@@ -27,9 +23,23 @@
     },
     "plugins": [
       "expo-asset",
+      "expo-font",
       "expo-status-bar",
       "expo-video",
-      "expo-image"
-    ]
+      "expo-image",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./src/assets/logo.png",
+          "backgroundColor": "#ffffff",
+          "resizeMode": "contain"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7208ef89-df73-4f3f-a940-a027de9752c3"
+      }
+    }
   }
 }

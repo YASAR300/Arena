@@ -4,8 +4,8 @@
   "main": "expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "eslint src/ App.js",
     "format": "prettier --write \"src/**/*.{js,jsx}\" App.js"
@@ -22,8 +22,10 @@
     "expo": "^57.0.0",
     "expo-asset": "~57.0.18",
     "expo-clipboard": "^57.0.2",
+    "expo-font": "~57.0.4",
     "expo-image": "~57.0.5",
     "expo-image-picker": "^57.0.19",
+    "expo-splash-screen": "~57.0.9",
     "expo-status-bar": "~57.0.1",
     "expo-video": "~57.0.4",
     "react": "19.2.3",

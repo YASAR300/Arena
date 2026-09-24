@@ -144,9 +144,11 @@ const RegistrationSheet = ({
 
     setIsPaying(true);
 
+    const targetCompId = competition?._id || competition?.id || competition?.slug || 'feedants-classical-dance';
+
     try {
       const initiateRes = await apiClient.post(
-        `/competitions/${competition._id}/register/initiate-payment`,
+        `/competitions/${targetCompId}/register/initiate-payment`,
         { referralCode: appliedReferral || undefined }
       );
 
@@ -184,9 +186,11 @@ const RegistrationSheet = ({
     setIsRazorpayModalVisible(false);
     setIsPaying(true);
 
+    const targetCompId = competition?._id || competition?.id || competition?.slug || 'feedants-classical-dance';
+
     try {
       const confirmRes = await apiClient.post(
-        `/competitions/${competition._id}/register/confirm`,
+        `/competitions/${targetCompId}/register/confirm`,
         {
           razorpay_order_id: paymentResult.razorpay_order_id,
           razorpay_payment_id: paymentResult.razorpay_payment_id,

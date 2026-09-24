@@ -26,21 +26,10 @@ export default function HomeScreen({ navigation, hideBottomBar = false, onNaviga
       }
       return;
     }
-    switch (tab) {
-      case 'home':
-        break;
-      case 'explore':
-        navigation.navigate(ROUTES.EXPLORE);
-        break;
-      case 'create':
-        navigation.navigate(ROUTES.SUBMISSION_UPLOAD);
-        break;
-      case 'competitions':
-        navigation.navigate(ROUTES.COMPETITION_DETAILS);
-        break;
-      case 'profile':
-        navigation.navigate(ROUTES.PROFILE);
-        break;
+    if (tab === 'create') {
+      navigation.navigate(ROUTES.SUBMISSION_UPLOAD);
+    } else {
+      navigation.navigate(ROUTES.MAIN_TABS, { tab });
     }
   };
 

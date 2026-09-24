@@ -56,7 +56,7 @@ export default function SignupScreen({ route, navigation }) {
       if (returnTo) {
         navigation.navigate(returnTo, returnParams || {});
       } else {
-        navigation.navigate(ROUTES.COMPETITION_DETAILS);
+        navigation.navigate(ROUTES.MAIN_TABS, { tab: 'competitions' });
       }
     } catch (err) {
       setIsLoading(false);

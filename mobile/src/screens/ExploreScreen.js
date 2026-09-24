@@ -68,21 +68,10 @@ export default function ExploreScreen({ navigation, hideBottomBar = false, onNav
       }
       return;
     }
-    switch (tab) {
-      case 'home':
-        navigation.navigate(ROUTES.HOME);
-        break;
-      case 'explore':
-        break;
-      case 'create':
-        navigation.navigate(ROUTES.SUBMISSION_UPLOAD);
-        break;
-      case 'competitions':
-        navigation.navigate(ROUTES.COMPETITION_DETAILS);
-        break;
-      case 'profile':
-        navigation.navigate(ROUTES.PROFILE);
-        break;
+    if (tab === 'create') {
+      navigation.navigate(ROUTES.SUBMISSION_UPLOAD);
+    } else {
+      navigation.navigate(ROUTES.MAIN_TABS, { tab });
     }
   };
 

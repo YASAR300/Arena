@@ -241,21 +241,10 @@ export default function CompetitionDetailsScreen({
               onNavigateTab(tab);
             } else {
               setActiveBottomNav(tab);
-              switch (tab) {
-                case 'home':
-                  navigation.navigate(ROUTES.HOME);
-                  break;
-                case 'explore':
-                  navigation.navigate(ROUTES.EXPLORE);
-                  break;
-                case 'create':
-                  navigation.navigate(ROUTES.SUBMISSION_UPLOAD, { competition });
-                  break;
-                case 'competitions':
-                  break;
-                case 'profile':
-                  navigation.navigate(ROUTES.PROFILE);
-                  break;
+              if (tab === 'create') {
+                navigation.navigate(ROUTES.SUBMISSION_UPLOAD, { competition });
+              } else {
+                navigation.navigate(ROUTES.MAIN_TABS, { tab });
               }
             }
           }}

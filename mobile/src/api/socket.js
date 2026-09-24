@@ -8,8 +8,7 @@ const getRawBaseUrl = () => {
     // Remove trailing /api or /api/v1 path component
     return apiUrl.replace(/\/api(\/v\d+)?$/, '');
   }
-  if (Platform.OS === 'android') return 'http://10.0.2.2:5000';
-  return 'http://localhost:5000';
+  return 'https://arena-wog5.onrender.com';
 };
 
 const SOCKET_URL = getRawBaseUrl();
